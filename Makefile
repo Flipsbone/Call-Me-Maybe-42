@@ -4,12 +4,13 @@ SRC = src/
 
 all: install
 
-install: .venv/uv.lock
-.venv/uv.lock: pyproject.toml
+.venv/uv.lock: pyproject.toml Makefile
 	@echo "Installing dependencies using uv..."
 	uv lock --check || uv lock
 	uv sync
 	@touch .venv/uv.lock
+
+install: .venv/uv.lock 
 
 run: install
 	@echo "Running the program..."
@@ -34,7 +35,8 @@ clean:
 	@echo "Cleaning up..."
 	rm -rf .mypy_cache \
 	       .pytest_cache \
-		   .ruff_cache
+		   .ruff_cache \
+		   data/output
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 .PHONY: all install run debug lint lint-strict clean
