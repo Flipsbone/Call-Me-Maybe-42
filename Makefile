@@ -13,6 +13,7 @@ install: .venv/uv.lock
 
 run: install
 	@echo "Running the program..."
+	mkdir -p data/output
 	$(PYTHON) $(MAIN) $(ARGS) 
 
 debug: install
