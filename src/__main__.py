@@ -34,8 +34,13 @@ def main() -> None:
     args = parser.parse_args()
     check_and_prepare_paths(args)
     try:
-        functions_data = DataParser.load_functions(args.functions_definition)
+        functions_data = DataParser.load_functions_definition(
+            args.functions_definition)
         print(functions_data)
+
+        functions_calling = DataParser.load_function_calling_tests(args.input)
+        print()
+        print(functions_calling)
     except Exception:
         sys.exit(1)
 

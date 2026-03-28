@@ -1,6 +1,10 @@
 from pydantic import BaseModel
 
 
+class FunctionCalling(BaseModel):
+    prompt: str
+
+
 class ParameterModel(BaseModel):
     type: str
 
