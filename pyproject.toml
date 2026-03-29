@@ -6,6 +6,7 @@ readme = "README.md"
 author = [{name = "advacher", email ="advacher@student.42lyon.fr"}]
 requires-python = ">=3.10"
 dependencies = [
+    "llm-sdk",
     "numpy",
     "pydantic",
 ]
@@ -31,3 +32,11 @@ exclude = ["\\.venv", "venv", "build", "dist"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.uv.workspace]
+members = [
+    "llm_sdk",
+]
+
+[tool.uv.sources]
+llm-sdk = { workspace = true }
