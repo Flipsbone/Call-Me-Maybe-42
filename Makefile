@@ -4,13 +4,12 @@ SRC = src/
 
 all: install
 
-.venv/uv.lock: pyproject.toml Makefile
+uv.lock: pyproject.toml Makefile
 	@echo "Installing dependencies using uv..."
-	uv lock --check || uv lock
 	uv sync
-	@touch .venv/uv.lock
+	@touch uv.lock
 
-install: .venv/uv.lock 
+install: uv.lock
 
 run: install
 	@echo "Running the program..."

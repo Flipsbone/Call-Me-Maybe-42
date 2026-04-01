@@ -4,44 +4,50 @@ from pathlib import Path
 from src.parsing import DataParser
 
 
-def check_and_prepare_paths(args: argparse.Namespace) -> None:
-    input_path = args.input
-    output_path = args.output
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--functions_definition",
+                        type=Path,
+                        default="data/input/functions_definition.json")
+    parser.add_argument("--input",
+                        type=Path,
+                        default="data/input/function_calling_tests.json")
+    parser.add_argument("--output",
+                        type=Path,
+                        default="data/output/function_calling_results.json")
+    return parser.parse_args()
 
-    input_file = Path(input_path)
-    if not input_file.exists():
-        print(f"Error : input file '{input_path}' not found.", file=sys.stderr)
-        sys.exit(1)
 
-    output_file = Path(output_path)
-    output_dir = output_file.parent
+def check_and_prepare_paths(func_def_path: Path,
+                            input_path: Path,
+                            output_path: Path) -> None:
+
+    for file_path in [func_def_path, input_path]:
+        if not file_path.exists():
+            print(f"Error : input file '{input_path}' not found.",
+                  file=sys.stderr)
+            sys.exit(1)
+
+    output_dir = output_path.parent
     if not output_dir.exists():
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
+        except OSError as e:
             print(f"Error : {output_dir} : {e}", file=sys.stderr)
             sys.exit(1)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--functions_definition",
-                        default="data/input/functions_definition.json")
-    parser.add_argument("--input",
-                        default="data/input/function_calling_tests.json")
-    parser.add_argument("--output",
-                        default="data/output/function_calling_results.json")
-    args = parser.parse_args()
-    check_and_prepare_paths(args)
+    args = parse_arguments()
+    check_and_prepare_paths(args.functions_definition, args.input, args.output)
     try:
-        functions_data = DataParser.load_functions_definition(
-            args.functions_definition)
-        print(functions_data)
-
-        functions_calling = DataParser.load_function_calling_tests(args.input)
-        print()
-        print(functions_calling)
-    except Exception:
+        data_manager = DataParser(
+            path_funct_definition=str(args.functions_definition),
+            path_funct_calling=str(args.input)
+        )
+        print(data_manager.functions_definition)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
 

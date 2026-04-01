@@ -5,8 +5,6 @@ class FunctionCallGenerator:
     def __init__(self):
         self.model: llm_sdk = Small_LLM_Model()
         self.vocab_path: llm_sdk = self.get_path_to_vocab_file()
-    
-    def prompt(self, prompt)--> None:
 
 
 def main() -> None:
