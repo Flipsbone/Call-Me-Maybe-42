@@ -2,3 +2,4 @@ LICENSE
 .venv
 data/output/
 note.txt
+__pycache__
