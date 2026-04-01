@@ -2,6 +2,8 @@ import sys
 import argparse
 from pathlib import Path
 from src.parsing import DataParser
+from src.vocabulary import VocabularyIndex
+from src.state_machine import JSONStateMachine, GenerationState
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -46,6 +48,11 @@ def main() -> None:
             path_funct_calling=str(args.input)
         )
         print(data_manager.functions_definition)
+        vocab = VocabularyIndex()
+        print(vocab.brace_close_ids)
+        constraint_manager = JSONStateMachine(vocab)
+        allowed = constraint_manager.get_allowed_tokens(GenerationState.START)
+        print(f"token {allowed}")
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
