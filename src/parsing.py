@@ -16,14 +16,14 @@ class DataParser:
         try:
             with open(file_path, 'r') as file_functions:
                 raw_data = json.load(file_functions)
-                return [model_parse(**item) for item in raw_data]
+            return [model_parse.model_validate(item) for item in raw_data]
+
         except FileNotFoundError:
-            print(f"Error: File {file_path} not found.", file=sys.stderr)
-            raise
+            print(f"Error: File '{file_path}' not found.", file=sys.stderr)
+            sys.exit(1)
         except json.JSONDecodeError as e:
-            print(f"Error: {file_path} is not valid JSON: {e.msg}",
-                  file=sys.stderr)
-            raise
+            print(f"Error: '{file_path}' is not valid JSON. {e.msg}", file=sys.stderr)
+            sys.exit(1)
         except ValidationError as e:
-            print(f"Erreur de validation : {e}", file=sys.stderr)
-            raise
+            print(f"Error: Data validation failed in '{file_path}'.\nDetails:\n{e}", file=sys.stderr)
+            sys.exit(1)

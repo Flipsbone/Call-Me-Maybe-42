@@ -4,6 +4,7 @@ from pathlib import Path
 from src.parsing import DataParser
 from src.vocabulary import VocabularyIndex
 from src.state_machine import JSONStateMachine, GenerationState
+from src.model_pydantic import FunctionCallResult
 
 
 def parse_arguments() -> argparse.Namespace:
