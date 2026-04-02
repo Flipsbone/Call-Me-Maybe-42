@@ -83,11 +83,14 @@ class VocabularyIndex:
                 return validated_data.root
 
         except FileNotFoundError:
-            print(f"Error: Vocabulary file '{file_path}' not found.", file=sys.stderr)
+            print(f"Error: Vocabulary file '{file_path}' not found.",
+                  file=sys.stderr)
             sys.exit(1)
         except json.JSONDecodeError as e:
-            print(f"Error: Vocabulary file is not valid JSON. {e}", file=sys.stderr)
+            print(f"Error: Vocabulary file is not valid JSON. {e}",
+                  file=sys.stderr)
             sys.exit(1)
         except ValidationError as e:
-            print(f"Error: Vocabulary file structure is invalid (Pydantic). {e}", file=sys.stderr)
+            print(f"Error: Vocabulary file structure is invalid (Pydantic)."
+                  f"{e}", file=sys.stderr)
             sys.exit(1)

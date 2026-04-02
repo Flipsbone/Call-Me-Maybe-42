@@ -22,8 +22,11 @@ class DataParser:
             print(f"Error: File '{file_path}' not found.", file=sys.stderr)
             sys.exit(1)
         except json.JSONDecodeError as e:
-            print(f"Error: '{file_path}' is not valid JSON. {e.msg}", file=sys.stderr)
+            print(f"Error: '{file_path}' is not valid JSON. {e.msg}",
+                  file=sys.stderr)
             sys.exit(1)
         except ValidationError as e:
-            print(f"Error: Data validation failed in '{file_path}'.\nDetails:\n{e}", file=sys.stderr)
+            print(f"Error: Data validation failed in '{file_path}'"
+                  f".\nDetails:\n{e}",
+                  file=sys.stderr)
             sys.exit(1)
