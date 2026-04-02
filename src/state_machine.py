@@ -1,5 +1,4 @@
 from enum import Enum, auto
-from typing import Optional
 from src.model_pydantic import FunctionDefinition
 from src.vocabulary import VocabularyIndex
 
@@ -42,9 +41,9 @@ class SchemaStateMachine:
 
         # --- Mémoire de l'état ---
         self.current_state = GenerationState.EXPECTING_ROOT_BRACE
-        self.selected_function: Optional[FunctionDefinition] = None
+        self.selected_function: FunctionDefinition | None
         self.remaining_parameters: list[str] = []
-        self.current_parameter_type: Optional[str] = None
+        self.current_parameter_type: str | None
 
     def get_allowed_tokens(self) -> set[int]:
         """Retourne les tokens autorisés selon l'état actuel du protocole."""
