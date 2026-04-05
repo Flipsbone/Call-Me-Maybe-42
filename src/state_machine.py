@@ -31,16 +31,33 @@ class StateTerminal(State):
     def transition(self, token_str: str) -> tuple["State", str]:
         return self, ""
 
-class StateInject(State):
-    text_to_inject: str = Field(...)
+class StateExpectLiteral(State):
+    expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
     def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        return [float('-inf')] * len(logits)
+        new_logits = [float('-inf')] * len(logits)
+        
+        # 🛡️ PROTECTION ANTI-BOUCLE : Si le buffer est corrompu, on rejette tout !
+        if not self.expected.startswith(self.buffer):
+            return new_logits
+            
+        remainder = self.expected[len(self.buffer):]
+        if not remainder:
+            return new_logits
+
+        for token_id, token_str in clean_vocab.items():
+            if remainder.startswith(token_str) or token_str.startswith(remainder):
+                new_logits[token_id] = logits[token_id]
+        return new_logits
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        next_s = self.next_state if self.next_state else StateTerminal()
-        return next_s, ""
+        self.buffer += token_str
+        if self.buffer.startswith(self.expected):
+            overflow = self.buffer[len(self.expected):]
+            next_s = self.next_state if self.next_state else StateTerminal()
+            return next_s, overflow
+        return self, ""
 
 class StateBranch(State):
     choices: dict[str, State] = Field(...)
@@ -49,8 +66,12 @@ class StateBranch(State):
         new_logits = [float('-inf')] * len(logits)
         possible_remainders = [c[len(self.buffer):] for c in self.choices.keys() if c.startswith(self.buffer)]
         
+        if not possible_remainders:
+            return new_logits
+            
         for token_id, token_str in clean_vocab.items():
-            if any(rem.startswith(token_str) or token_str.startswith(rem) for rem in possible_remainders):
+            # 🛡️ Pas d'overflow autorisé ici, on atterrit parfaitement sur le nom de la fonction
+            if any(rem.startswith(token_str) for rem in possible_remainders):
                 new_logits[token_id] = logits[token_id]
         return new_logits
 
@@ -71,19 +92,18 @@ class StateParseNumber(State):
             token_str = clean_vocab[token_id]
             test_str = self.buffer + token_str
             
-            # 1. Toujours en cours de construction (ex: "-4")
             if REGEX_PARTIAL_NUMBER.fullmatch(test_str):
                 new_logits[token_id] = logits[token_id] 
-                continue
-
-            # 2. Terminé (ex: "-42" ou "-42,")
-            match = REGEX_PREFIX_NUMBER.match(test_str)
-            if match:
-                overflow = test_str[match.end():]
-                # Si pas d'overflow, c'est terminé pile-poil.
-                # S'il y a un overflow, on vérifie que le caractère suivant est légal en JSON
-                if not overflow or overflow[0] in [',', '}', ']', ' ', '\n', '\r', '\t']:
-                    new_logits[token_id] = logits[token_id] 
+            else:
+                match = REGEX_PREFIX_NUMBER.match(test_str)
+                if match:
+                    overflow = test_str[match.end():]
+                    # 🛡️ VALIDATION DU DÉBORDEMENT par rapport à l'état suivant
+                    if not overflow:
+                        new_logits[token_id] = logits[token_id]
+                    elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
+                        new_logits[token_id] = logits[token_id]
+                        
         return new_logits
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -109,12 +129,18 @@ class StateParseString(State):
                 
             test_str = self.buffer + token_str
             
-            # 1. En cours de construction
             if REGEX_PARTIAL_STRING.fullmatch(test_str):
                 new_logits[token_id] = logits[token_id]
-            # 2. Terminé (avec ou sans overflow)
-            elif REGEX_PREFIX_STRING.match(test_str):
-                new_logits[token_id] = logits[token_id]
+            else:
+                match = REGEX_PREFIX_STRING.match(test_str)
+                if match:
+                    overflow = test_str[match.end():]
+                    # 🛡️ VALIDATION DU DÉBORDEMENT par rapport à l'état suivant
+                    if not overflow:
+                        new_logits[token_id] = logits[token_id]
+                    elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
+                        new_logits[token_id] = logits[token_id]
+                        
         return new_logits
 
     def transition(self, token_str: str) -> tuple["State", str]:

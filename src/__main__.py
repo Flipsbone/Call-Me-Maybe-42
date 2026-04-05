@@ -1,101 +1,161 @@
 import sys
+import json
 import argparse
 from pathlib import Path
+from typing import Any
 
 from src.parsing import DataParser
 from src.vocabulary import VocabularyIndex
-from src.state_machine import JsonStateMachine, StateExpectLiteral
+from src.generator import ConstrainedGenerator
+from src.model_pydantic import FunctionCallResult
 from llm_sdk import Small_LLM_Model
 
-
-def DEBUG_display_list_token(llm : Small_LLM_Model):
-        my_tokens = [
-            6656, 515, 92163, 21509, 5134, 12306, 70180, 1060, 76325, 87079,
-            24616, 12841, 1066, 7213, 30779, 5180, 39484, 13887, 46145, 19011,
-            15429, 60998, 45128, 18507, 2559, 58958, 71248, 38484, 28247, 90,
-            41056, 71779, 4710, 56940, 5238, 28802, 65668, 97417, 8333, 18574,
-            33933, 73363, 13463, 664, 55447, 4257, 1698, 31906, 41636, 89253,
-            77993, 22701, 11950, 25773, 688, 26285, 18611, 46771, 9401, 26809,
-            90306, 10947, 4293, 198, 95429, 715, 42708, 6360, 27352, 37083,
-            220, 41693, 59101, 58591, 36577, 94947, 88804, 6374, 31979, 79083,
-            86766, 45807, 3824, 5872, 2290, 8945, 17648, 69877, 86770, 65271,
-            1789, 2303, 256, 257, 59649, 260, 1797, 262, 10503, 6926,
-            271, 3344, 96017, 786, 51475, 56596, 34583, 37144, 38171, 24348,
-            14621, 286, 16159, 74525, 79133, 48426, 86827, 54060, 35117, 3374,
-            14642, 1843, 310, 314, 15677, 11070, 18749, 22335, 49987, 81221,
-            5959, 66376, 19273, 93004, 80719, 5968, 78672, 338, 34642, 341,
-            34135, 25435, 10589, 1383, 33641, 17264, 79226, 51068, 1406, 6526,
-            53632, 1920, 7561, 394, 14731, 40337, 414, 23459, 15270, 32678,
-            88998, 3502, 26546, 51124, 14265, 39865, 10683, 79871, 47549, 82361,
-            1476, 8136, 83913, 26065, 981, 14808, 4569, 77787, 75228, 9699,
-            503, 999, 36845, 20974, 52720, 5108, 2549, 4597, 55799, 16885,
-            15865, 63477, 1022, 61439]
-
-        for token_id in my_tokens:
-            token_str = llm.decode([token_id])
-            print(f"{token_id:<10} | {repr(token_str)}")
-
+from src.state_machine import (
+    JsonStateMachine, StateTerminal, StateExpectLiteral,
+    StateBranch, StateParseString, StateParseNumber
+)
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Test des modules internes (Parsing, Vocabulaire, Machine à états)")
-    parser.add_argument("--functions_definition",
-                        type=Path,
+    parser = argparse.ArgumentParser(description="Call Me Maybe - Function Calling")
+    parser.add_argument("--functions_definition", type=Path,
                         default=Path("data/input/functions_definition.json"))
-    parser.add_argument("--input",
-                        type=Path,
+    parser.add_argument("--input", type=Path,
                         default=Path("data/input/function_calling_tests.json"))
+    parser.add_argument("--output", type=Path,
+                        default=Path("data/output/function_calling_results.json"))
     return parser.parse_args()
 
 
-def check_paths(func_def_path: Path, input_path: Path) -> None:
+def check_and_prepare_paths(func_def_path: Path, input_path: Path, output_path: Path) -> None:
     for file_path in [func_def_path, input_path]:
         if not file_path.exists():
-            print(f"Erreur : le fichier d'entrée '{file_path}' est introuvable.",
-                  file=sys.stderr)
+            print(f"Error : input file '{file_path}' not found.", file=sys.stderr)
             sys.exit(1)
+
+    output_dir = output_path.parent
+    if not output_dir.exists():
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            print(f"Error : {output_dir} : {e}", file=sys.stderr)
+            sys.exit(1)
+
+
+def build_prompt(user_request: str, functions: list) -> str:
+    """
+    Pré-prompting clair et direct pour guider le LLM.
+    """
+    prompt_text = "You are a function calling system. Choose the exact function name and provide the correct parameters.\n\nAvailable functions:\n"
+    for function in functions:
+        prompt_text += f"- {function.name}: {function.description}\n"
+    prompt_text += f"\nUser request: {user_request}\nJSON Output:\n"
+    return prompt_text
+
+
+def build_dynamic_machine(functions: list) -> JsonStateMachine:
+    branch_choices = {}
+
+    for fn in functions:
+        current_state = StateExpectLiteral(expected='\n}', next_state=StateTerminal())
+
+        if not fn.parameters:
+            branch_choices[fn.name] = StateExpectLiteral(
+                expected='",\n  "parameters": {}',
+                next_state=current_state
+            )
+            continue
+
+        current_state = StateExpectLiteral(expected='\n  }', next_state=current_state)
+
+        params = list(fn.parameters.items())
+        
+        for i in reversed(range(len(params))):
+            p_name, p_model = params[i]
+
+            if p_model.type == "number":
+                val_state = StateParseNumber(next_state=current_state)
+            else:
+                val_state = StateParseString(next_state=current_state)
+
+            if i == 0:
+                inject_str = f'",\n  "parameters": {{\n    "{p_name}": '
+            else:
+                inject_str = f',\n    "{p_name}": '
+
+            current_state = StateExpectLiteral(expected=inject_str, next_state=val_state)
+
+        branch_choices[fn.name] = current_state
+
+    root_state = StateExpectLiteral(
+        expected='{\n  "name": "', 
+        next_state=StateBranch(choices=branch_choices)
+    )
+    
+    return JsonStateMachine(current_state=root_state)
+
+def process_single_prompt(user_prompt: str, data_manager: DataParser, generator: ConstrainedGenerator) -> dict[str, Any]:
+    
+    # 1. Formatage du texte pour le LLM
+    full_prompt = build_prompt(user_prompt, data_manager.functions_definition)
+
+    # 2. On fabrique le "moule" dynamique pour cette question spécifique
+    generator.machine = build_dynamic_machine(data_manager.functions_definition)
+
+    # 3. Le générateur s'occupe de tout (Injection ultra-rapide + LLM contraint)
+    generated_json_str = generator.generate(full_prompt)
+
+    # 4. Vérification et parsing
+    try:
+        parsed_data = json.loads(generated_json_str)
+        return {
+            "prompt": user_prompt,
+            "name": parsed_data["name"],
+            "parameters": parsed_data.get("parameters", {})
+        }
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Le JSON généré est invalide : {e}\nContenu brut:\n{generated_json_str}")
 
 
 def main() -> None:
     args = parse_arguments()
-    check_paths(args.functions_definition, args.input)
-
-    print("--- Début des tests des fichiers joints ---")
-
-    print("\n1. Test DataParser...")
+    check_and_prepare_paths(args.functions_definition, args.input, args.output)
+    
     try:
         data_manager = DataParser(
             path_funct_definition=str(args.functions_definition),
             path_funct_calling=str(args.input)
         )
-        print(f"{len(data_manager.functions_definition)} def load.")
-        print(f"{len(data_manager.function_calling_tests)} tests load.")
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
 
-
-    print("\n2. Test VocabularyIndex...")
-    try:
+        print("Initializing the LLM model and vocabulary...")
         llm = Small_LLM_Model()
         vocab = VocabularyIndex(model=llm)
-        print(f"  vocab load : {vocab.size} tokens.")
-        print(f"{vocab.vocab_path}")
-    except Exception as e:
-        print(f" Error Vocab: {e}", file=sys.stderr)
-        sys.exit(1)
+        
+        # Le générateur est initialisé avec un état inactif, il sera écrasé dans process_single_prompt
+        dummy_machine = JsonStateMachine(current_state=StateTerminal())
+        generator = ConstrainedGenerator(llm=llm, vocab_index=vocab, machine=dummy_machine)
 
-    print("\n3. Test JsonStateMachine...")
-    try:
-        state_machine = JsonStateMachine(
-            current_state=StateExpectLiteral(expected="{", next_state=None)
-        )
-        print(f"Current state : {state_machine.current_state.__class__.__name__}")
-    except Exception as e:
-        print(f"Error state machine: {e}", file=sys.stderr)
-        sys.exit(1)
+        results = []
 
-    print("\n All good")
+        for test_case in data_manager.function_calling_tests:
+            print(f"Processing: '{test_case.prompt}'...")
+            
+            try:
+                result_dict = process_single_prompt(test_case.prompt, data_manager, generator)
+                validated_result = FunctionCallResult.model_validate(result_dict)
+                results.append(validated_result.model_dump())
+                print(f"  ✓ Success: {result_dict['name']}")
+            except Exception as e:
+                print(f"  ✗ Error: {e}", file=sys.stderr)
+                continue
+
+        with open(args.output, 'w', encoding='utf-8') as file_out:
+            json.dump(results, file_out, indent=2, ensure_ascii=False)
+            
+        print(f"\n✓ All results successfully saved to {args.output}")
+
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

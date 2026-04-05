@@ -4,19 +4,16 @@ from pydantic import BaseModel, ConfigDict
 
 from llm_sdk import Small_LLM_Model
 from src.vocabulary import VocabularyIndex
-from src.state_machine import JsonStateMachine, StateTerminal, StateInject
+from src.state_machine import JsonStateMachine, StateTerminal
 
 
 class ConstrainedGenerator(BaseModel):
-    # Cette ligne magique dit à Pydantic : "Ne panique pas si tu vois des objets complexes comme Small_LLM_Model"
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    # Typage strict parfait
     llm: Small_LLM_Model
     vocab_index: VocabularyIndex
     machine: JsonStateMachine
 
-    def _ensure_flat_list(self, data: Any) -> list[int]:
+    def _ensure_flat_list(self, data: list | np.ndarray) -> list[int]:
         arr = np.array(data).flatten()
         return [int(x) for x in arr.tolist()]
 
@@ -33,27 +30,10 @@ class ConstrainedGenerator(BaseModel):
         return masked_logits
 
     def generate(self, prompt: str) -> str:
-        """
-        Boucle hybride : Injecte le texte connu (rapide) ou fait générer le LLM (lent).
-        """
         input_ids = self._ensure_flat_list(self.llm.encode(prompt))
         generated_text = ""
 
         while not isinstance(self.machine.current_state, StateTerminal):
-            
-            # --- FAST PATH : Injection directe de texte ---
-            if isinstance(self.machine.current_state, StateInject):
-                text_to_inject = self.machine.current_state.text_to_inject
-                
-                generated_text += text_to_inject
-                injected_ids = self._ensure_flat_list(self.llm.encode(text_to_inject))
-                input_ids.extend(injected_ids)
-                
-                # Transition instantanée
-                self.machine.current_state, _ = self.machine.current_state.transition("")
-                continue
-
-            # --- SLOW PATH : Génération contrainte par le LLM ---
             try:
                 last_logits = self._get_last_logits(input_ids)
                 
@@ -72,7 +52,7 @@ class ConstrainedGenerator(BaseModel):
                 next_token_id = int(np.argmax(masked_logits))
                 
                 if masked_logits[next_token_id] == float('-inf'):
-                    print("Warning : The state machine rejected the entire vocabulary.", file=sys.stderr)
+                    print("Error : The state machine rejected the entire vocabulary.", file=sys.stderr)
                     self.machine.current_state = StateTerminal()
                     continue
                     
