@@ -90,7 +90,7 @@ def build_dynamic_machine(functions: list) -> JsonStateMachine:
         expected='{\n  "name": "', 
         next_state=StateBranch(choices=branch_choices)
     )
-    
+
     return JsonStateMachine(current_state=root_state)
 
 def process_single_prompt(user_prompt: str, data_manager: DataParser, generator: ConstrainedGenerator) -> dict[str, Any]:
@@ -129,16 +129,19 @@ def main() -> None:
         print("Initializing the LLM model and vocabulary...")
         llm = Small_LLM_Model()
         vocab = VocabularyIndex(model=llm)
-        
+
         # Le générateur est initialisé avec un état inactif, il sera écrasé dans process_single_prompt
         dummy_machine = JsonStateMachine(current_state=StateTerminal())
         generator = ConstrainedGenerator(llm=llm, vocab_index=vocab, machine=dummy_machine)
 
         results = []
 
-        for test_case in data_manager.function_calling_tests:
+        sorted_tests = sorted(data_manager.function_calling_tests,
+                              key=lambda x: x.prompt)
+
+        for test_case in sorted_tests:
             print(f"Processing: '{test_case.prompt}'...")
-            
+
             try:
                 result_dict = process_single_prompt(test_case.prompt, data_manager, generator)
                 validated_result = FunctionCallResult.model_validate(result_dict)
