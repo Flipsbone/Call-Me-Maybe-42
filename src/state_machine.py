@@ -1,93 +1,212 @@
-from enum import Enum, auto
-from src.model_pydantic import FunctionDefinition
-from src.vocabulary import VocabularyIndex
-from pydantic import Model
+import sys
+import re
+from abc import ABC, abstractmethod
+from pydantic import BaseModel, ConfigDict, Field
+from src.vocabulary import VocabularyPruner
 
-class GenerationState(Enum):
-    EXPECTING_JSON_START = auto()        # Cible: '{"name": "'
-    EXPECTING_FUNCTION_NAME = auto()     # Cible: un des noms du catalogue
-    EXPECTING_PARAMETERS_START = auto()  # Cible: '", "parameters": {'
-    EXPECTING_PARAM_KEY = auto()         # Cible: '"nom_du_param": '
-    EXPECTING_PARAM_VALUE = auto()       # Cible: dépend du type (str, int, bool)
-    EXPECTING_PARAM_SEPARATOR = auto()   # Cible: ', ' ou '}' (fin)
-    DONE = auto()
+WS = r'[ \n\r\t]*'
+
+REGEX_PARTIAL_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*$')
+REGEX_COMPLETE_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*"{WS}$')
+
+REGEX_PARTIAL_NUMBER = re.compile(
+    fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$'
+)
+REGEX_COMPLETE_NUMBER = re.compile(
+    fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?{WS}$'
+)
+
+REGEX_PREFIX_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*"')
+REGEX_PREFIX_NUMBER = re.compile(
+    fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?'
+)
 
 
-class SchemaStateMachine:
-    def __init__(self,
-                 vocab_index: VocabularyIndex,
-                 available_functions: list[FunctionDefinition]
-                 ):
-        self.vocab = vocab_index
-        self.functions_catalog: dict[str, FunctionDefinition] = {
-            fn.name: fn for fn in available_functions
-            }
+class State(BaseModel, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    buffer: str = Field(default="")
 
-        self.current_state = GenerationState.EXPECTING_JSON_START
-        self.buffer: str = ""
+    @abstractmethod
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        pass
 
-        self.selected_function: FunctionDefinition | None
-        self.remaining_parameters: list[str] = []
-        self.current_parameter_type: str | None
+    @abstractmethod
+    def transition(self, token_str: str) -> tuple["State", str]:
+        pass
 
-    def get_allowed_tokens(self) -> set[int]:
 
-        match self.current_state:
-            case GenerationState.EXPECTING_JSON_START:
-                target = '{"name": "'
-                return self._get_prefix_matches(target)
+class StateTerminal(State):
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            return [float('-inf')] * len(logits)
+        except Exception as e:
+            print(f"Erreur fatale dans StateTerminal : {e}", file=sys.stderr)
+            sys.exit(1)
 
-            case GenerationState.EXPECTING_FUNCTION_NAME:
-                return self._get_function_name_matches()
+    def transition(self, token_str: str) -> tuple["State", str]:
+        return self, ""
 
-            case GenerationState.EXPECTING_PARAMETERS_START:
-                target = '", "parameters": {'
-                return self._get_prefix_matches(target)
 
-            case GenerationState.EXPECTING_PARAM_KEY:
-                if self.remaining_parameters:
-                    param_name = self.remaining_parameters[0]
-                    target = f'"{param_name}": '
-                    return self._get_prefix_matches(target)
-                return set()
+class StateExpectLiteral(State):
+    expected: str = Field(...)
+    next_state: State | None = Field(default=None)
 
-            case GenerationState.EXPECTING_PARAM_VALUE:
-                return self._get_value_matches(self.current_parameter_type)
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            for token_id, token_str in clean_vocab.items():
+                test_str = self.buffer + token_str
+                if not (self.expected.startswith(test_str) or test_str.startswith(self.expected)):
+                    logits[token_id] = float('-inf')
+            return logits
+        except Exception as e:
+            print(f"Error in StateExpectLiteral : {e}", file=sys.stderr)
+            return [float('-inf')] * len(logits)
 
-            case GenerationState.EXPECTING_PARAM_SEPARATOR:
-                if not self.remaining_parameters:
-                    target = '}'
-                else:
-                    target = ', '
-                return self._get_prefix_matches(target)
-
-            case GenerationState.DONE:
-                return set()
-
-    def advance(self, token_id: int):
-        token_str = self.vocab.clean_vocab.get(token_id, "")
+    def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
-        match self.current_state:
-            case GenerationState.EXPECTING_JSON_START:
-                if self.buffer == '{"name": "':
-                    self.current_state = GenerationState.FUNCTION_NAME
-                    self.buffer = ""
+        if self.buffer.startswith(self.expected):
+            overflow = self.buffer[len(self.expected):]
+            next_s = self.next_state if self.next_state else StateTerminal()
+            return next_s, overflow
+        return self, ""
 
-            case GenerationState.EXPECTING_FUNCTION_NAME:
-                if self.selected_function == (
-                                        self.functions_catalog[self.buffer]):
-                    param_dict = (
-                        self.selected_function.parameters
-                        if isinstance(self.selected_function.parameters, dict)
-                        else self.selected_function.parameters.model_dump()
-                        )
 
-                    self.remaining_parameters = list(param_dict.keys())
+class StateExpectEnum(State):
+    choices: list[str] = Field(...)
+    next_state: State | None = Field(default=None)
 
-                    self.current_state = GenerationState.EXPECTING_PARAMETERS_START
-                    self.buffer = ""
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            possible = [c for c in self.choices if c.startswith(self.buffer)]
+            for token_id, token_str in clean_vocab.items():
+                valid = any(
+                    c[len(self.buffer):].startswith(token_str) or
+                    token_str.startswith(c[len(self.buffer):])
+                    for c in possible
+                )
+                if not valid:
+                    logits[token_id] = float('-inf')
+            return logits
+        except Exception as e:
+            print(f"Erreur in StateExpectEnum : {e}", file=sys.stderr)
+            return [float('-inf')] * len(logits)
 
-            case GenerationState.EXPECTING_PARAMETERS_START:
-                if self.buffer == '", "parameters": {':
-                    param_data = (
-                    self.remaining_parameters = list(params_data.keys())
+    def transition(self, token_str: str) -> tuple["State", str]:
+        self.buffer += token_str
+        for choice in self.choices:
+            if self.buffer.startswith(choice):
+                overflow = self.buffer[len(choice):]
+                next_s = self.next_state if self.next_state else StateTerminal()
+                return next_s, overflow
+        return self, ""
+
+
+class StateParseString(State):
+    next_state: State | None = Field(default=None)
+
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            for token_id, token_str in clean_vocab.items():
+                test_str = self.buffer + token_str
+                if (REGEX_PARTIAL_STRING.fullmatch(test_str) or
+                        REGEX_COMPLETE_STRING.fullmatch(test_str)):
+                    continue
+                if REGEX_PREFIX_STRING.match(test_str):
+                    continue
+                logits[token_id] = float('-inf')
+            return logits
+        except Exception as e:
+            print(f"Erreur in StateParseString : {e}", file=sys.stderr)
+            return [float('-inf')] * len(logits)
+
+    def transition(self, token_str: str) -> tuple["State", str]:
+        self.buffer += token_str
+        match = REGEX_PREFIX_STRING.match(self.buffer)
+        if match:
+            string_part = match.group()
+            overflow = self.buffer[len(string_part):]
+            next_s = self.next_state if self.next_state else StateTerminal()
+            return next_s, overflow
+        return self, ""
+
+
+class StateParseNumber(State):
+    next_state: State | None = Field(default=None)
+
+    def filter_logits(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            new_logits = [float('-inf')] * len(logits)
+
+            for token_id in pruner.numeric_tokens:
+                token_str = clean_vocab[token_id]
+                test_str = self.buffer + token_str
+                
+                if (REGEX_PARTIAL_NUMBER.fullmatch(test_str) or
+                        REGEX_COMPLETE_NUMBER.fullmatch(test_str)):
+                    new_logits[token_id] = logits[token_id] 
+                    continue
+
+                match = REGEX_PREFIX_NUMBER.match(test_str)
+                if match:
+                    overflow = test_str[match.end():]
+                    if (overflow and overflow[0] in
+                            [',', '}', ']', ' ', '\n', '\r', '\t']):
+                        new_logits[token_id] = logits[token_id] 
+
+            return new_logits
+        except Exception as e:
+            print(f"Erreur in StateParseNumber : {e}", file=sys.stderr)
+            return [float('-inf')] * len(logits)
+
+    def transition(self, token_str: str) -> tuple["State", str]:
+        self.buffer += token_str
+        match = REGEX_PREFIX_NUMBER.match(self.buffer)
+
+        if match and len(match.group()) < len(self.buffer.lstrip()):
+            num_part = match.group()
+            ws_len = len(self.buffer) - len(self.buffer.lstrip())
+            overflow = self.buffer[ws_len + len(num_part):]
+
+            next_s = self.next_state if self.next_state else StateTerminal()
+            return next_s, overflow
+
+        return self, ""
+
+
+class JsonStateMachine(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    current_state: State
+
+    def apply_constraints(
+            self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner
+            ) -> list[float]:
+        try:
+            return self.current_state.filter_logits(logits, clean_vocab, pruner)
+        except Exception as e:
+            print(f"Error in change state  : {e}", file=sys.stderr)
+            return [float('-inf')] * len(logits)
+
+    def step(self, token_str: str) -> None:
+        try:
+            overflow = token_str
+            while (overflow and not
+                   isinstance(self.current_state, StateTerminal)):
+
+                self.current_state, overflow = (
+                    self.current_state.transition(overflow))
+
+        except Exception as e:
+            print(f"Error in change state : {e}", file=sys.stderr)
+            self.current_state = StateTerminal()

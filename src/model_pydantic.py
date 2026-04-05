@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 from typing import Any
 
 
@@ -21,3 +21,7 @@ class FunctionCallResult(BaseModel):
     prompt: str
     name: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class VocabSchema(RootModel[dict[str, int]]):
+    pass

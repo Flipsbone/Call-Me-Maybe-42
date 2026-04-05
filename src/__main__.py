@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.parsing import DataParser
 from src.vocabulary import VocabularyIndex
-from src.state_machine import SchemaStateMachine
+from src.state_machine import JsonStateMachine, StateExpectLiteral
 from llm_sdk import Small_LLM_Model
 
 
@@ -78,24 +78,19 @@ def main() -> None:
     print("\n2. Test VocabularyIndex...")
     try:
         llm = Small_LLM_Model()
-        vocab = VocabularyIndex(llm)
+        vocab = VocabularyIndex(model=llm)
         print(f"  vocab load : {vocab.size} tokens.")
         print(f"{vocab.vocab_path}")
     except Exception as e:
         print(f" Error Vocab: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print("\n3. Test SchemaStateMachine...")
+    print("\n3. Test JsonStateMachine...")
     try:
-        state_machine = SchemaStateMachine(
-            vocab_index=vocab,
-            available_functions=data_manager.functions_definition
+        state_machine = JsonStateMachine(
+            current_state=StateExpectLiteral(expected="{", next_state=None)
         )
-        initial_allowed = state_machine.get_allowed_tokens()
-        print(f"current state : {state_machine.current_state.name}")
-        print(f"Nb token at current state : {len(initial_allowed)}")
-        for token_str in initial_allowed:
-            print(llm.decode(token_str))
+        print(f"Current state : {state_machine.current_state.__class__.__name__}")
     except Exception as e:
         print(f"Error state machine: {e}", file=sys.stderr)
         sys.exit(1)
