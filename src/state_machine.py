@@ -18,7 +18,7 @@ class State(BaseModel, ABC):
     buffer: str = Field(default="")
 
     @abstractmethod
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
         pass
 
     @abstractmethod
@@ -27,8 +27,8 @@ class State(BaseModel, ABC):
 
 
 class StateTerminal(State):
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        return [float('-inf')] * len(logits)
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+        return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
         return self, ""
@@ -38,23 +38,15 @@ class StateExpectLiteral(State):
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        new_logits = [float('-inf')] * len(logits)
-        
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
         if not self.expected.startswith(self.buffer):
-            return new_logits
+            return set()
             
         remainder = self.expected[len(self.buffer):]
         if not remainder:
-            return new_logits
+            return set()
 
-        valid_ids = {tid for tid, ts in clean_vocab.items()
-                     if remainder.startswith(ts) or ts.startswith(remainder)}
-        
-        for token_id in valid_ids:
-            new_logits[token_id] = logits[token_id]
-        
-        return new_logits
+        return pruner.get_literal_matches(remainder, clean_vocab)
 
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
@@ -68,20 +60,14 @@ class StateExpectLiteral(State):
 class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        new_logits = [float('-inf')] * len(logits)
-        possible_remainders = [c[len(self.buffer):] for c in self.choices.keys() if c.startswith(self.buffer)]
-        
-        if not possible_remainders:
-            return new_logits
-        
-        valid_ids = {tid for tid, ts in clean_vocab.items()
-                     if any(rem.startswith(ts) for rem in possible_remainders)}
-        
-        for token_id in valid_ids:
-            new_logits[token_id] = logits[token_id]
-        
-        return new_logits
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+        valid_ids = set()
+        for choice in self.choices.keys():
+            if choice.startswith(self.buffer):
+                remainder = choice[len(self.buffer):]
+                if remainder:
+                    valid_ids.update(pruner.get_literal_matches(remainder, clean_vocab))
+        return valid_ids
 
     def transition(self, token_str: str) -> tuple[State, str]:
         self.buffer += token_str
@@ -95,25 +81,24 @@ class StateBranch(State):
 class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        new_logits = [float('-inf')] * len(logits)
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+        valid_ids = set()
         for token_id in pruner.numeric_tokens:
             token_str = clean_vocab[token_id]
             test_str = self.buffer + token_str
             
             if REGEX_PARTIAL_NUMBER.fullmatch(test_str):
-                new_logits[token_id] = logits[token_id] 
+                valid_ids.add(token_id)
             else:
                 match = REGEX_PREFIX_NUMBER.match(test_str)
                 if match:
                     overflow = test_str[match.end():]
-                    # 🛡️ VALIDATION DU DÉBORDEMENT par rapport à l'état suivant
                     if not overflow:
-                        new_logits[token_id] = logits[token_id]
+                        valid_ids.add(token_id)
                     elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
-                        new_logits[token_id] = logits[token_id]
+                        valid_ids.add(token_id)
                         
-        return new_logits
+        return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
@@ -130,30 +115,25 @@ class StateParseNumber(State):
 class StateParseString(State):
     next_state: State | None = Field(default=None)
 
-    def filter_logits(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        new_logits = [float('-inf')] * len(logits)
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+        valid_ids = set(pruner.string_safe_tokens) 
         
-        for token_id, token_str in clean_vocab.items():
-            # ✅ LOGIQUE ORIGINALE: Accepter les tokens SANS " ou \ directement
-            if '"' not in token_str and '\\' not in token_str:
-                new_logits[token_id] = logits[token_id]
-                continue
-            
-            # Pour les tokens AVEC " ou \, les valider avec regex
+        for token_id in pruner.string_unsafe_tokens:
+            token_str = clean_vocab[token_id]
             test_str = self.buffer + token_str
             
             if REGEX_PARTIAL_STRING.fullmatch(test_str):
-                new_logits[token_id] = logits[token_id]
+                valid_ids.add(token_id)
             else:
                 match = REGEX_PREFIX_STRING.match(test_str)
                 if match:
                     overflow = test_str[match.end():]
                     if not overflow:
-                        new_logits[token_id] = logits[token_id]
+                        valid_ids.add(token_id)
                     elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
-                        new_logits[token_id] = logits[token_id]
+                        valid_ids.add(token_id)
         
-        return new_logits
+        return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
@@ -170,8 +150,8 @@ class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     current_state: State
 
-    def apply_constraints(self, logits: list[float], clean_vocab: dict[int, str], pruner: VocabularyPruner) -> list[float]:
-        return self.current_state.filter_logits(logits, clean_vocab, pruner)
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+        return self.current_state.get_valid_tokens(clean_vocab, pruner)
 
     def step(self, token_str: str) -> None:
         overflow = token_str

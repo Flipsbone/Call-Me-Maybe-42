@@ -10,12 +10,27 @@ from src.model_pydantic import VocabSchema
 class VocabularyPruner(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     numeric_tokens: list[int] = Field(default_factory=list)
+    string_safe_tokens: list[int] = Field(default_factory=list)
+    string_unsafe_tokens: list[int] = Field(default_factory=list)
+    literal_cache: dict[str, set[int]] = Field(default_factory=dict)
 
     def build(self, clean_vocab: dict[int, str]) -> None:
         is_num_chunk = re.compile(r'^[ \n\r\t]*-?[\d.eE+-]*[ \n\r\t,}\]]*$')
         for token_id, token_str in clean_vocab.items():
             if is_num_chunk.match(token_str):
                 self.numeric_tokens.append(token_id)
+            if '"' not in token_str and '\\' not in token_str:
+                self.string_safe_tokens.append(token_id)
+            else:
+                self.string_unsafe_tokens.append(token_id)
+
+    def get_literal_matches(self, remainder: str, clean_vocab: dict[int, str]) -> set[int]:
+        if remainder not in self.literal_cache:
+            self.literal_cache[remainder] = {
+                tid for tid, ts in clean_vocab.items()
+                if remainder.startswith(ts) or ts.startswith(remainder)
+            }
+        return self.literal_cache[remainder]
 
 
 class VocabularyIndex(BaseModel):
