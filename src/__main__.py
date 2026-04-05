@@ -136,10 +136,7 @@ def main() -> None:
 
         results = []
 
-        sorted_tests = sorted(data_manager.function_calling_tests,
-                              key=lambda x: x.prompt)
-
-        for test_case in sorted_tests:
+        for test_case in data_manager.function_calling_tests:
             print(f"Processing: '{test_case.prompt}'...")
 
             try:

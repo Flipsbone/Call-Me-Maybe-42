@@ -23,10 +23,9 @@ class ConstrainedGenerator(BaseModel):
         return np.array(logits_raw)
 
     def _apply_mask(self, logits: np.ndarray, valid_tokens: set[int]) -> np.ndarray:
+        valid_indices = np.array(list(valid_tokens), dtype=np.int32)
         masked_logits = np.full_like(logits, -np.inf)
-        for token_idx in valid_tokens:
-            if 0 <= token_idx < len(logits):
-                masked_logits[token_idx] = logits[token_idx]
+        masked_logits[valid_indices] = logits[valid_indices]
         return masked_logits
 
     def generate(self, prompt: str) -> str:
