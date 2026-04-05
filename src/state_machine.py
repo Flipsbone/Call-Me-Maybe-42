@@ -155,5 +155,8 @@ class JsonStateMachine(BaseModel):
 
     def step(self, token_str: str) -> None:
         overflow = token_str
-        while overflow and not isinstance(self.current_state, StateTerminal):
-            self.current_state, overflow = self.current_state.transition(overflow)
+        state = self.current_state
+        while overflow and not isinstance(state, StateTerminal):
+            state, overflow = state.transition(overflow)
+            
+        self.current_state = state

@@ -11,12 +11,17 @@ class ConstrainedGenerator(BaseModel):
     vocab_index: VocabularyIndex
     machine: JsonStateMachine
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, max_tokens: int = 150) -> str:
         input_ids = self.llm.encode(prompt)[0].tolist()
         generated_text = ""
+        token_count = 0
 
         while not isinstance(self.machine.current_state, StateTerminal):
-            
+            if token_count >= max_tokens:
+                print(f"\n[Warning] Safety stop: generated too many tokens.", file=sys.stderr)
+                self.machine.current_state = StateTerminal()
+                continue
+
             # Fast-forward (Prefix Forcing)
             if isinstance(self.machine.current_state, StateExpectLiteral):
                 expected = self.machine.current_state.expected
@@ -36,11 +41,9 @@ class ConstrainedGenerator(BaseModel):
                 continue
 
             try:
-                # Récupération des logits
                 logits_raw = self.llm.get_logits_from_input_ids(input_ids)
                 logits_np = np.array(logits_raw, dtype=np.float32)
 
-                # Filtrage via la machine à états
                 valid_tokens = self.machine.get_valid_tokens(
                     self.vocab_index.clean_vocab,
                     self.vocab_index.pruner
@@ -59,6 +62,8 @@ class ConstrainedGenerator(BaseModel):
                 generated_text += token_str
                 input_ids.append(next_token_id)
                 self.machine.step(token_str)
+                
+                token_count += 1
                 
             except Exception as e:
                 print(f"Critical error: {e}", file=sys.stderr)
