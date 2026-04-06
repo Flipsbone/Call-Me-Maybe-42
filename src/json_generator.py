@@ -1,79 +1,81 @@
 # src/json_generator.py
 
+import json
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.parsing import DataParser
 from src.generator import ConstrainedGenerator
+from src.model_pydantic import FunctionDefinition
 from src.state_machine import (
     JsonStateMachine, StateTerminal, StateExpectLiteral,
     StateBranch, StateParseString, StateParseNumber
 )
 
 
-class SimpleJsonGenerator(BaseModel):
-    """Génère le JSON complet directement"""
+class TwoStepJsonGenerator(BaseModel):
+    """Génère le JSON en deux étapes pour contourner l'absence de KV Cache du SDK."""
     user_prompt: str
     data_manager: DataParser
     generator: ConstrainedGenerator
     
     class Config:
         arbitrary_types_allowed = True
-    
-    def build_prompt(self) -> str:
-        """Construit le prompt pour générer le JSON"""
-        prompt_text = "You are a function calling system. Choose the exact function name and provide the correct parameters.\n\nAvailable functions:\n"
-        for function in self.data_manager.functions_definition:
-            prompt_text += f"- {function.name}: {function.description}\n"
-        prompt_text += f"\nUser request: {self.user_prompt}\nJSON Output:\n"
-        return prompt_text
-    
-    def build_machine(self) -> JsonStateMachine:
-        """Construit la machine d'état pour générer le JSON"""
-        branch_choices = {}
 
-        for fn in self.data_manager.functions_definition:
-            current_state = StateExpectLiteral(expected='\n}', next_state=StateTerminal())
+    def prompt_for_name(self) -> str:
+        prompt = "<|im_start|>system\nChoose the exact function name for the user request.\nFunctions:\n"
+        for f in self.data_manager.functions_definition:
+            prompt += f"- {f.name}: {f.description}\n"
+        prompt += f"<|im_end|>\n<|im_start|>user\n{self.user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+        return prompt
 
-            if not fn.parameters:
-                branch_choices[fn.name] = StateExpectLiteral(
-                    expected='",\n  "parameters": {}',
-                    next_state=current_state
-                )
-                continue
+    def machine_for_name(self) -> JsonStateMachine:
+        choices = {fn.name: StateTerminal() for fn in self.data_manager.functions_definition}
+        return JsonStateMachine(current_state=StateBranch(choices=choices))
 
-            current_state = StateExpectLiteral(expected='\n  }', next_state=current_state)
+    def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
+        prompt = f"<|im_start|>system\nExtract params for {target_fn.name}.\n"
+        prompt += f"Desc: {target_fn.description}\n<|im_end|>\n"
+        prompt += f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+        return prompt
 
-            params = list(fn.parameters.items())
-            
-            for i in reversed(range(len(params))):
-                p_name, p_model = params[i]
+    def machine_for_params(self, target_fn: FunctionDefinition) -> JsonStateMachine:
+        if not target_fn.parameters:
+            return JsonStateMachine(current_state=StateExpectLiteral(expected='{}', next_state=StateTerminal()))
 
-                if p_model.type == "number":
-                    val_state = StateParseNumber(next_state=current_state)
-                else:
-                    val_state = StateParseString(next_state=current_state)
+        current_state = StateExpectLiteral(expected='\n}', next_state=StateTerminal())
+        params = list(target_fn.parameters.items())
+        
+        for i in reversed(range(len(params))):
+            p_name, p_model = params[i]
+            val_state = StateParseNumber(next_state=current_state) if p_model.type == "number" else StateParseString(next_state=current_state)
 
-                if i == 0:
-                    inject_str = f'",\n  "parameters": {{\n    "{p_name}": '
-                else:
-                    inject_str = f',\n    "{p_name}": '
+            inject_str = f'{{\n  "{p_name}": ' if i == 0 else f',\n  "{p_name}": '
+            current_state = StateExpectLiteral(expected=inject_str, next_state=val_state)
 
-                current_state = StateExpectLiteral(expected=inject_str, next_state=val_state)
+        return JsonStateMachine(current_state=current_state)
 
-            branch_choices[fn.name] = current_state
+    def generate(self) -> dict[str, Any]:
+        self.generator.machine = self.machine_for_name()
+        selected_name = self.generator.generate(self.prompt_for_name(), max_tokens=15)
+        
+        target_fn = next((f for f in self.data_manager.functions_definition if f.name == selected_name), None)
+        if not target_fn:
+            raise RuntimeError(f"Fonction invalide générée: {selected_name}")
 
-        root_state = StateExpectLiteral(
-            expected='{\n  "name": "', 
-            next_state=StateBranch(choices=branch_choices)
-        )
+        self.generator.machine = self.machine_for_params(target_fn)
+        params_str = self.generator.generate(self.prompt_for_params(target_fn), max_tokens=100)
+        
+        try:
+            params_dict = json.loads(params_str) if params_str.strip() else {}
+        except json.JSONDecodeError:
+            params_dict = {}
 
-        return JsonStateMachine(current_state=root_state)
-    
-    def generate(self) -> str:
-        """Génère le JSON complet"""
-        self.generator.machine = self.build_machine()
-        return self.generator.generate(self.build_prompt())
+        return {
+            "prompt": self.user_prompt,
+            "name": selected_name,
+            "parameters": params_dict
+        }
 
 
 def process_single_prompt_optimized(
@@ -81,23 +83,11 @@ def process_single_prompt_optimized(
     data_manager: DataParser, 
     generator: ConstrainedGenerator
 ) -> dict[str, Any]:
-    """Interface simplifiée pour traiter un prompt"""
-    import json
     
-    json_gen = SimpleJsonGenerator(
+    json_gen = TwoStepJsonGenerator(
         user_prompt=user_prompt,
         data_manager=data_manager,
         generator=generator
     )
     
-    generated_json_str = json_gen.generate()
-    
-    try:
-        parsed_data = json.loads(generated_json_str)
-        return {
-            "prompt": user_prompt,
-            "name": parsed_data["name"],
-            "parameters": parsed_data.get("parameters", {})
-        }
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Le JSON généré est invalide : {e}\nContenu brut:\n{generated_json_str}")
+    return json_gen.generate()

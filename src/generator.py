@@ -41,9 +41,6 @@ class ConstrainedGenerator(BaseModel):
                 continue
 
             try:
-                logits_raw = self.llm.get_logits_from_input_ids(input_ids)
-                logits_np = np.array(logits_raw, dtype=np.float32)
-
                 valid_tokens = self.machine.get_valid_tokens(
                     self.vocab_index.clean_vocab,
                     self.vocab_index.pruner
@@ -54,9 +51,15 @@ class ConstrainedGenerator(BaseModel):
                     self.machine.current_state = StateTerminal()
                     continue
                 
-                valid_arr = np.array(list(valid_tokens), dtype=np.int32)
-                scores = logits_np[valid_arr]
-                next_token_id = int(valid_arr[np.argmax(scores)])
+                if len(valid_tokens) == 1:
+                    next_token_id = list(valid_tokens)[0]
+                else:
+                    logits_raw = self.llm.get_logits_from_input_ids(input_ids)
+                    logits_np = np.array(logits_raw, dtype=np.float32)
+                    
+                    valid_arr = np.array(list(valid_tokens), dtype=np.int32)
+                    scores = logits_np[valid_arr]
+                    next_token_id = int(valid_arr[np.argmax(scores)])
                 
                 token_str = self.vocab_index.clean_vocab[next_token_id]
                 generated_text += token_str

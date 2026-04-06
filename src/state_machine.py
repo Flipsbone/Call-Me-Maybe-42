@@ -83,19 +83,25 @@ class StateParseNumber(State):
 
     def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
         valid_ids = set()
+        
+        # Optimisation Python : Cacher les méthodes pour accélérer la boucle for
+        test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
+        test_prefix = REGEX_PREFIX_NUMBER.match
+        buf = self.buffer
+        expected_next = getattr(self.next_state, 'expected', '')
+
         for token_id in pruner.numeric_tokens:
-            token_str = clean_vocab[token_id]
-            test_str = self.buffer + token_str
+            test_str = buf + clean_vocab[token_id]
             
-            if REGEX_PARTIAL_NUMBER.fullmatch(test_str):
+            if test_fullmatch(test_str):
                 valid_ids.add(token_id)
             else:
-                match = REGEX_PREFIX_NUMBER.match(test_str)
+                match = test_prefix(test_str)
                 if match:
                     overflow = test_str[match.end():]
                     if not overflow:
                         valid_ids.add(token_id)
-                    elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
+                    elif expected_next.startswith(overflow):
                         valid_ids.add(token_id)
                         
         return valid_ids
@@ -116,24 +122,56 @@ class StateParseString(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
-        valid_ids = set(pruner.string_safe_tokens) 
+        valid_ids = set()
+        
+        buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
+        expected_next = getattr(self.next_state, 'expected', '')
+        
+        if buffer_match:
+            overflow_len = len(self.buffer) - buffer_match.end()
+            
+            if overflow_len > 0 and not expected_next.startswith(self.buffer[buffer_match.end():]):
+                return valid_ids # Le buffer est invalide
+                
+            remaining_expected = expected_next[overflow_len:]
+            if remaining_expected:
+                valid_ids.update(pruner.get_literal_matches(remaining_expected, clean_vocab))
+            return valid_ids
+
+        has_opening_quote = self.buffer.lstrip().startswith('"')
+        
+        if has_opening_quote:
+            valid_ids.update(pruner.string_safe_tokens)
+            
+        test_fullmatch = REGEX_PARTIAL_STRING.fullmatch
+        test_prefix = REGEX_PREFIX_STRING.match
+        buf = self.buffer
         
         for token_id in pruner.string_unsafe_tokens:
-            token_str = clean_vocab[token_id]
-            test_str = self.buffer + token_str
+            test_str = buf + clean_vocab[token_id]
             
-            if REGEX_PARTIAL_STRING.fullmatch(test_str):
+            if test_fullmatch(test_str):
                 valid_ids.add(token_id)
             else:
-                match = REGEX_PREFIX_STRING.match(test_str)
+                match = test_prefix(test_str)
                 if match:
                     overflow = test_str[match.end():]
                     if not overflow:
                         valid_ids.add(token_id)
-                    elif hasattr(self.next_state, 'expected') and getattr(self.next_state, 'expected').startswith(overflow):
+                    elif expected_next.startswith(overflow):
                         valid_ids.add(token_id)
         
         return valid_ids
+
+    def transition(self, token_str: str) -> tuple["State", str]:
+        self.buffer += token_str
+        match = REGEX_PREFIX_STRING.match(self.buffer)
+        if match:
+            string_part = match.group()
+            overflow = self.buffer[len(string_part):]
+            next_s = self.next_state if self.next_state else StateTerminal()
+            return next_s, overflow
+        return self, ""
 
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
