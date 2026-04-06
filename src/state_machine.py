@@ -77,14 +77,13 @@ class StateBranch(State):
                 return next_s, overflow
         return self, ""
 
-
 class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
         valid_ids = set()
         
-        # Optimisation Python : Cacher les méthodes pour accélérer la boucle for
+        # Micro-optimisation : variables locales pour accélérer la boucle
         test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
         test_prefix = REGEX_PREFIX_NUMBER.match
         buf = self.buffer
@@ -127,22 +126,23 @@ class StateParseString(State):
         buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
         expected_next = getattr(self.next_state, 'expected', '')
         
+        # CAS 1 : La chaîne est déjà fermée, on évite les regex lourdes
         if buffer_match:
             overflow_len = len(self.buffer) - buffer_match.end()
-            
             if overflow_len > 0 and not expected_next.startswith(self.buffer[buffer_match.end():]):
-                return valid_ids # Le buffer est invalide
+                return valid_ids
                 
             remaining_expected = expected_next[overflow_len:]
             if remaining_expected:
                 valid_ids.update(pruner.get_literal_matches(remaining_expected, clean_vocab))
             return valid_ids
 
+        # CAS 2 : La chaîne est ouverte, on autorise les mots sûrs APRES le guillemet
         has_opening_quote = self.buffer.lstrip().startswith('"')
-        
         if has_opening_quote:
             valid_ids.update(pruner.string_safe_tokens)
             
+        # Micro-optimisation : variables locales pour la boucle
         test_fullmatch = REGEX_PARTIAL_STRING.fullmatch
         test_prefix = REGEX_PREFIX_STRING.match
         buf = self.buffer
@@ -172,17 +172,6 @@ class StateParseString(State):
             next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, overflow
         return self, ""
-
-    def transition(self, token_str: str) -> tuple["State", str]:
-        self.buffer += token_str
-        match = REGEX_PREFIX_STRING.match(self.buffer)
-        if match:
-            string_part = match.group()
-            overflow = self.buffer[len(string_part):]
-            next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
-        return self, ""
-
 
 class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

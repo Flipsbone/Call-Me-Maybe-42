@@ -51,6 +51,8 @@ class ConstrainedGenerator(BaseModel):
                     self.machine.current_state = StateTerminal()
                     continue
                 
+                # --- L'OPTIMISATION DU COURT-CIRCUIT ---
+                # Si 1 seul token est possible, on n'appelle pas le LLM !
                 if len(valid_tokens) == 1:
                     next_token_id = list(valid_tokens)[0]
                 else:

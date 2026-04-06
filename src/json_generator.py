@@ -1,5 +1,3 @@
-# src/json_generator.py
-
 import json
 from typing import Any
 from pydantic import BaseModel
@@ -12,9 +10,8 @@ from src.state_machine import (
     StateBranch, StateParseString, StateParseNumber
 )
 
-
 class TwoStepJsonGenerator(BaseModel):
-    """Génère le JSON en deux étapes pour contourner l'absence de KV Cache du SDK."""
+    """Génère le JSON en deux étapes pour esquiver l'absence de KV Cache."""
     user_prompt: str
     data_manager: DataParser
     generator: ConstrainedGenerator
@@ -22,8 +19,9 @@ class TwoStepJsonGenerator(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+    # --- ÉTAPE 1 : CHOIX DU NOM ---
     def prompt_for_name(self) -> str:
-        prompt = "<|im_start|>system\nChoose the exact function name for the user request.\nFunctions:\n"
+        prompt = "<|im_start|>system\nChoose the exact function name.\nFunctions:\n"
         for f in self.data_manager.functions_definition:
             prompt += f"- {f.name}: {f.description}\n"
         prompt += f"<|im_end|>\n<|im_start|>user\n{self.user_prompt}<|im_end|>\n<|im_start|>assistant\n"
@@ -33,6 +31,7 @@ class TwoStepJsonGenerator(BaseModel):
         choices = {fn.name: StateTerminal() for fn in self.data_manager.functions_definition}
         return JsonStateMachine(current_state=StateBranch(choices=choices))
 
+    # --- ÉTAPE 2 : EXTRACTION DES PARAMÈTRES ---
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
         prompt = f"<|im_start|>system\nExtract params for {target_fn.name}.\n"
         prompt += f"Desc: {target_fn.description}\n<|im_end|>\n"
@@ -55,6 +54,7 @@ class TwoStepJsonGenerator(BaseModel):
 
         return JsonStateMachine(current_state=current_state)
 
+    # --- EXÉCUTION ---
     def generate(self) -> dict[str, Any]:
         self.generator.machine = self.machine_for_name()
         selected_name = self.generator.generate(self.prompt_for_name(), max_tokens=15)
@@ -89,5 +89,4 @@ def process_single_prompt_optimized(
         data_manager=data_manager,
         generator=generator
     )
-    
     return json_gen.generate()
