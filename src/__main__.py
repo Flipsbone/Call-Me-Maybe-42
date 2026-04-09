@@ -1,5 +1,3 @@
-# __main__.py
-
 import sys
 import json
 import argparse
@@ -16,20 +14,26 @@ from src.state_machine import JsonStateMachine, StateTerminal
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Call Me Maybe - Function Calling")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,
                         default=Path("data/input/functions_definition.json"))
     parser.add_argument("--input", type=Path,
                         default=Path("data/input/function_calling_tests.json"))
     parser.add_argument("--output", type=Path,
-                        default=Path("data/output/function_calling_results.json"))
+                        default=Path(
+                            "data/output/function_calling_results.json"))
     return parser.parse_args()
 
 
-def check_and_prepare_paths(func_def_path: Path, input_path: Path, output_path: Path) -> None:
+def check_and_prepare_paths(
+                            func_def_path: Path,
+                            input_path: Path,
+                            output_path: Path) -> None:
+
     for file_path in [func_def_path, input_path]:
         if not file_path.exists():
-            print(f"Error : input file '{file_path}' not found.", file=sys.stderr)
+            print(f"Error : input file '{file_path}' not found.",
+                  file=sys.stderr)
             sys.exit(1)
 
     output_dir = output_path.parent
@@ -44,7 +48,7 @@ def check_and_prepare_paths(func_def_path: Path, input_path: Path, output_path: 
 def main() -> None:
     args = parse_arguments()
     check_and_prepare_paths(args.functions_definition, args.input, args.output)
-    
+
     try:
         data_manager = DataParser(
             path_funct_definition=str(args.functions_definition),
@@ -65,8 +69,8 @@ def main() -> None:
 
             try:
                 result_dict = process_single_prompt_optimized(
-                    test_case.prompt, 
-                    data_manager, 
+                    test_case.prompt,
+                    data_manager,
                     generator
                 )
                 validated_result = FunctionCallResult.model_validate(result_dict)
@@ -78,7 +82,7 @@ def main() -> None:
 
         with open(args.output, 'w', encoding='utf-8') as file_out:
             json.dump(results, file_out, indent=2, ensure_ascii=False)
-            
+
         print(f"\n✓ All results successfully saved to {args.output}")
 
     except Exception as e:
