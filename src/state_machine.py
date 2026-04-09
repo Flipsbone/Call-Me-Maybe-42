@@ -2,7 +2,7 @@ import sys
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
-from src.vocabulary import VocabularyPruner
+from src.vocabulary import VocabularyFilterSchema
 
 WS = r'[ \n\r\t]*'
 
@@ -177,7 +177,7 @@ class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     current_state: State
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         return self.current_state.get_valid_tokens(clean_vocab, pruner)
 
     def step(self, token_str: str) -> None:
@@ -185,5 +185,5 @@ class JsonStateMachine(BaseModel):
         state = self.current_state
         while overflow and not isinstance(state, StateTerminal):
             state, overflow = state.transition(overflow)
-            
+
         self.current_state = state
