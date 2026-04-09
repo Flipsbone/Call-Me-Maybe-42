@@ -18,7 +18,7 @@ class State(BaseModel, ABC):
     buffer: str = Field(default="")
 
     @abstractmethod
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         pass
 
     @abstractmethod
@@ -27,7 +27,7 @@ class State(BaseModel, ABC):
 
 
 class StateTerminal(State):
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -38,7 +38,7 @@ class StateExpectLiteral(State):
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         if not self.expected.startswith(self.buffer):
             return set()
             
@@ -60,7 +60,7 @@ class StateExpectLiteral(State):
 class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         valid_ids = set()
         for choice in self.choices.keys():
             if choice.startswith(self.buffer):
@@ -80,7 +80,7 @@ class StateBranch(State):
 class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         valid_ids = set()
         
         # Micro-optimisation : variables locales pour accélérer la boucle
@@ -120,18 +120,18 @@ class StateParseNumber(State):
 class StateParseString(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyPruner) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilterSchema) -> set[int]:
         valid_ids = set()
-        
+
         buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
         expected_next = getattr(self.next_state, 'expected', '')
-        
+
         # CAS 1 : La chaîne est déjà fermée, on évite les regex lourdes
         if buffer_match:
             overflow_len = len(self.buffer) - buffer_match.end()
             if overflow_len > 0 and not expected_next.startswith(self.buffer[buffer_match.end():]):
                 return valid_ids
-                
+
             remaining_expected = expected_next[overflow_len:]
             if remaining_expected:
                 valid_ids.update(pruner.get_literal_matches(remaining_expected, clean_vocab))
@@ -172,6 +172,7 @@ class StateParseString(State):
             next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, overflow
         return self, ""
+
 
 class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

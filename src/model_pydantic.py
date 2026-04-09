@@ -8,7 +8,7 @@ class FunctionCalling(BaseModel):
 
 
 class ParameterModel(BaseModel):
-    type: str | None
+    type: str | None = None
 
 
 class FunctionDefinition(BaseModel):
@@ -46,7 +46,5 @@ class VocabularyIndexSchema(BaseModel):
     vocab: dict[str, int] = Field(default_factory=dict)
     clean_vocab: dict[int, str] = Field(default_factory=dict)
     size: int = Field(default=0)
-    VocabularyFilterSchema = Field(
+    filter_schema: VocabularyFilterSchema = Field(
         default_factory=VocabularyFilterSchema)
-
-

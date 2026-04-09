@@ -19,18 +19,19 @@ def setup_configuration() -> AppConfig:
                             "data/output/function_calling_results.json"))
     args = parser.parse_args()
 
-    output_dir = args.output.parent
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        print(f"Error : created output directory '{output_dir}' : {e}",
-              file=sys.stderr)
-        sys.exit(1)
+    for file_path in [args.functions_definition, args.input]:
+        if not file_path.exists():
+            sys.exit(f"Error: File not found: {file_path}")
 
     functions_def = _load_json_data(
         args.functions_definition, FunctionDefinition)
 
     calling_tests = _load_json_data(args.input, FunctionCalling)
+
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        sys.exit(f"Error: Could not create directory {args.output.parent}-{e}")
 
     try:
         return AppConfig(
@@ -44,13 +45,16 @@ def setup_configuration() -> AppConfig:
         sys.exit(1)
 
 
-def _load_json_data(file_path: Path, model_parse: type[BaseModel]) -> list:
+def _load_json_data(file_path: Path, check_pydantic: type[BaseModel]) -> list:
 
     try:
-        with file_path.open('r', encoding='utf-8') as file:
+        with file_path.open('r') as file:
             raw_data = json.load(file)
-        return [model_parse.model_validate(item) for item in raw_data]
+        return [check_pydantic.model_validate(item) for item in raw_data]
 
+    except PermissionError:
+        print("Error: Does not have right permission", file=sys.stderr)
+        sys.exit(1)
     except FileNotFoundError:
         print(f"Error: File '{file_path}' not found.", file=sys.stderr)
         sys.exit(1)
@@ -59,6 +63,6 @@ def _load_json_data(file_path: Path, model_parse: type[BaseModel]) -> list:
               file=sys.stderr)
         sys.exit(1)
     except ValidationError as e:
-        print(f"Error: Data validation failed in '{file_path}'.\nDetails:\n{e}",
+        print(f"Error: Data validation failed '{file_path}'.\nDetails:\n{e}",
               file=sys.stderr)
         sys.exit(1)

@@ -1,35 +1,34 @@
 [
   {
-    "prompt": "What is the sum of 2 and 3?"
+    "prompt": "Calcule la somme de 0 et -0",
+    "note": "Teste la gestion du zéro signé en flottant."
   },
   {
-    "prompt": "What is the sum of 265 and 345?"
+    "prompt": "Inverse la chaîne : '   '",
+    "note": "Teste une chaîne composée uniquement d'espaces (edge case classique de tokenisation)."
   },
   {
-    "prompt": "Greet shrek"
+    "prompt": "Dis bonjour à '{\"key\": \"value\"}'",
+    "note": "Teste l'insertion de syntaxe JSON à l'intérieur d'une valeur de chaîne (risque de confusion pour le décodeur)."
   },
   {
-    "prompt": "Greet john"
+    "prompt": "Additionne 1e3 et 200",
+    "note": "Vérifie si votre système accepte la notation scientifique comme entrée numérique."
   },
   {
-    "prompt": "Reverse the string 'hello'"
+    "prompt": "Reverse 'L'arbre est tombé\\nle vent souffle.'",
+    "note": "Teste les caractères d'échappement comme le saut de ligne dans une chaîne."
   },
   {
-    "prompt": "Reverse the string 'world'"
+    "prompt": "Donne le résultat de 9007199254740991 + 1",
+    "note": "Teste la limite de précision des entiers (Number.MAX_SAFE_INTEGER)."
   },
   {
-    "prompt": "What is the square root of 16?"
+    "prompt": "Greet ''",
+    "note": "Chaîne vide : le décodeur doit être capable de fermer les guillemets immédiatement."
   },
   {
-    "prompt": "Calculate the square root of 144"
-  },
-  {
-    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
-  },
-  {
-    "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
-  },
-  {
-    "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+    "prompt": "Fais la somme de 42 et 'erreur'",
+    "note": "Cas d'erreur : le modèle doit-il quand même tenter de générer un nombre ou échouer proprement ? [cite: 149]"
   }
 ]
