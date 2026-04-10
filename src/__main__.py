@@ -45,7 +45,7 @@ def main() -> None:
             print(f"  ✓ Success: {result_dict.get('name', 'Unknown')}")
 
         except Exception as e:
-            sys.exit(f"  ✗ Error on prompt '{test_case.prompt}': {e}")
+            print(f"  ✗ Error on prompt '{test_case.prompt}': {e}")
             continue
 
         if results:

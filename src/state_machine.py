@@ -126,12 +126,14 @@ class StateParseNumber(State):
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
         match = REGEX_PREFIX_NUMBER.match(self.buffer)
-        if match and len(match.group()) < len(self.buffer.lstrip()):
+        if match:
             num_part = match.group()
             ws_len = len(self.buffer) - len(self.buffer.lstrip())
             overflow = self.buffer[ws_len + len(num_part):]
-            next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
+            if overflow and overflow[0] in ',}]\n':
+                next_s = (
+                    self.next_state if self.next_state else StateTerminal())
+                return next_s, overflow
         return self, ""
 
 
@@ -232,5 +234,4 @@ class JsonStateMachine(BaseModel):
         state = self.current_state
         while overflow and not isinstance(state, StateTerminal):
             state, overflow = state.transition(overflow)
-
-        self.current_state = state
+            self.current_state = state
