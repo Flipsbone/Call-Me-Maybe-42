@@ -1,4 +1,3 @@
-import sys
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,8 +8,10 @@ WS = r'[ \n\r\t]*'
 REGEX_PARTIAL_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*$')
 REGEX_PREFIX_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*"')
 
-REGEX_PARTIAL_NUMBER = re.compile(fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
-REGEX_PREFIX_NUMBER = re.compile(fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?')
+REGEX_PARTIAL_NUMBER = re.compile(
+    fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
+REGEX_PREFIX_NUMBER = re.compile(
+    fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?')
 
 
 class State(BaseModel, ABC):
@@ -18,7 +19,9 @@ class State(BaseModel, ABC):
     buffer: str = Field(default="")
 
     @abstractmethod
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
         pass
 
     @abstractmethod
@@ -27,7 +30,9 @@ class State(BaseModel, ABC):
 
 
 class StateTerminal(State):
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str],
+            vocab_filter: VocabFilter) -> set[int]:
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -38,7 +43,10 @@ class StateExpectLiteral(State):
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
         if not self.expected.startswith(self.buffer):
             return set()
 
@@ -46,7 +54,7 @@ class StateExpectLiteral(State):
         if not remainder:
             return set()
 
-        return pruner.get_literal_matches(remainder, clean_vocab)
+        return vocab_filter.get_literal_matches(remainder, clean_vocab)
 
     def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
@@ -60,13 +68,20 @@ class StateExpectLiteral(State):
 class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
-        valid_ids = set()
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
+        valid_ids: set[int] = set()
+
         for choice in self.choices.keys():
             if choice.startswith(self.buffer):
                 remainder = choice[len(self.buffer):]
                 if remainder:
-                    valid_ids.update(pruner.get_literal_matches(remainder, clean_vocab))
+                    valid_ids.update(
+                        vocab_filter.get_literal_matches(
+                            remainder, clean_vocab))
+
         return valid_ids
 
     def transition(self, token_str: str) -> tuple[State, str]:
@@ -77,18 +92,22 @@ class StateBranch(State):
                 return next_s, overflow
         return self, ""
 
+
 class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
-        valid_ids = set()
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
+        valid_ids: set[int] = set()
 
         test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
         test_prefix = REGEX_PREFIX_NUMBER.match
         buf = self.buffer
         expected_next = getattr(self.next_state, 'expected', '')
 
-        for token_id in pruner.numeric_tokens:
+        for token_id in vocab_filter.numeric_tokens:
             test_str = buf + clean_vocab[token_id]
 
             if test_fullmatch(test_str):
@@ -119,34 +138,36 @@ class StateParseNumber(State):
 class StateParseString(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
-        valid_ids = set()
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
+        valid_ids: set[int] = set()
 
         buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
         expected_next = getattr(self.next_state, 'expected', '')
 
-        # CAS 1 : La chaîne est déjà fermée, on évite les regex lourdes
         if buffer_match:
             overflow_len = len(self.buffer) - buffer_match.end()
-            if overflow_len > 0 and not expected_next.startswith(self.buffer[buffer_match.end():]):
+            if (overflow_len > 0 and not expected_next.startswith(
+                    self.buffer[buffer_match.end():])):
                 return valid_ids
 
             remaining_expected = expected_next[overflow_len:]
             if remaining_expected:
-                valid_ids.update(pruner.get_literal_matches(remaining_expected, clean_vocab))
+                valid_ids.update(vocab_filter.get_literal_matches(
+                    remaining_expected, clean_vocab))
             return valid_ids
 
-        # CAS 2 : La chaîne est ouverte, on autorise les mots sûrs APRES le guillemet
         has_opening_quote = self.buffer.lstrip().startswith('"')
         if has_opening_quote:
-            valid_ids.update(pruner.string_safe_tokens)
+            valid_ids.update(vocab_filter.string_safe_tokens)
 
-        # Micro-optimisation : variables locales pour la boucle
         test_fullmatch = REGEX_PARTIAL_STRING.fullmatch
         test_prefix = REGEX_PREFIX_STRING.match
         buf = self.buffer
 
-        for token_id in pruner.string_unsafe_tokens:
+        for token_id in vocab_filter.string_unsafe_tokens:
             test_str = buf + clean_vocab[token_id]
 
             if test_fullmatch(test_str):
@@ -177,8 +198,11 @@ class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     current_state: State
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
-        return self.current_state.get_valid_tokens(clean_vocab, pruner)
+    def get_valid_tokens(
+            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
+        return self.current_state.get_valid_tokens(clean_vocab, vocab_filter)
 
     def step(self, token_str: str) -> None:
         overflow = token_str
