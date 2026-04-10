@@ -2,7 +2,7 @@ import sys
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
-from src.vocabulary import VocabularyFilter
+from src.vocabulary import VocabFilter
 
 WS = r'[ \n\r\t]*'
 
@@ -18,7 +18,7 @@ class State(BaseModel, ABC):
     buffer: str = Field(default="")
 
     @abstractmethod
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         pass
 
     @abstractmethod
@@ -27,7 +27,7 @@ class State(BaseModel, ABC):
 
 
 class StateTerminal(State):
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -38,7 +38,7 @@ class StateExpectLiteral(State):
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         if not self.expected.startswith(self.buffer):
             return set()
 
@@ -60,7 +60,7 @@ class StateExpectLiteral(State):
 class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         valid_ids = set()
         for choice in self.choices.keys():
             if choice.startswith(self.buffer):
@@ -80,7 +80,7 @@ class StateBranch(State):
 class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         valid_ids = set()
 
         test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
@@ -119,7 +119,7 @@ class StateParseNumber(State):
 class StateParseString(State):
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         valid_ids = set()
 
         buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
@@ -177,7 +177,7 @@ class JsonStateMachine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     current_state: State
 
-    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabularyFilter) -> set[int]:
+    def get_valid_tokens(self, clean_vocab: dict[int, str], pruner: VocabFilter) -> set[int]:
         return self.current_state.get_valid_tokens(clean_vocab, pruner)
 
     def step(self, token_str: str) -> None:

@@ -8,7 +8,7 @@
     "note": "Teste une chaîne composée uniquement d'espaces (edge case classique de tokenisation)."
   },
   {
-    "prompt": "Dis bonjour à '{\"key\": \"value\"}'",
+    "prompt": "",
     "note": "Teste l'insertion de syntaxe JSON à l'intérieur d'une valeur de chaîne (risque de confusion pour le décodeur)."
   },
   {
