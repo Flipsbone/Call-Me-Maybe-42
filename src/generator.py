@@ -40,7 +40,7 @@ class ConstrainedGenerator(BaseModel):
                     token_count += 1
 
         if token_count >= max_tokens:
-            sys.exit("Error too many tokens generated")
+            raise ValueError("Error: too many tokens generated")
 
         return generated_text
 

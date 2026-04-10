@@ -30,13 +30,17 @@ lint-strict: install
 	uv run flake8 $(SRC)
 	uv run mypy --strict $(SRC)
 
+profile:
+	uv run python -m cProfile -s cumtime src/__main__.py > profil_complet.txt
+
 clean:
 	@echo "Cleaning up..."
 	rm -rf .mypy_cache \
 	       .pytest_cache \
 		   .ruff_cache \
+		   profil_complet.txt \
 		   data/output
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
-.PHONY: all install run debug lint lint-strict clean
+.PHONY: all install run debug lint lint-strict clean profile
 
