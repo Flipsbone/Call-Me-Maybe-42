@@ -22,9 +22,8 @@ def main() -> None:
     except Exception as e:
         sys.exit(f"CRITICAL ERROR: {e}")
 
-    initial_machine = JsonStateMachine(current_state=StateTerminal())
-    generator = ConstrainedGenerator(
-        llm=llm, vocab_index=vocab, machine=initial_machine)
+    initial_machine = JsonStateMachine(StateTerminal())
+    generator = ConstrainedGenerator(llm, vocab, initial_machine)
 
     results = []
 

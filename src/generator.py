@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 from llm_sdk import Small_LLM_Model
-from src.vocabulary import VocabularyIndex
+from src.vocabulary import VocabIndex
 from src.state_machine import (
                                 JsonStateMachine,
                                 StateTerminal,
@@ -13,10 +13,11 @@ from src.state_machine import (
 class ConstrainedGenerator(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model
-    vocab_index: VocabularyIndex
+    vocab_index: VocabIndex
     machine: JsonStateMachine
 
     def generate(self, prompt: str, max_tokens: int = 150) -> str:
+
         input_ids = self.llm.encode(prompt)[0].tolist()
         generated_text = ""
         token_count = 0

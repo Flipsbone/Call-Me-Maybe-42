@@ -1,12 +1,17 @@
 import json
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from src.generator import ConstrainedGenerator
-from src.model_pydantic import FunctionDefinition
+from src.functions_validator import FunctionDefinition
 from src.state_machine import (
-    JsonStateMachine, StateTerminal, StateExpectLiteral,
-    StateBranch, StateParseString, StateParseNumber
+    State,
+    JsonStateMachine,
+    StateTerminal,
+    StateExpectLiteral,
+    StateBranch,
+    StateParseString,
+    StateParseNumber
 )
 
 
@@ -15,60 +20,97 @@ class GenerationError(Exception):
 
 
 class TwoStepJsonGenerator(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
     functions_definition: list[FunctionDefinition]
     generator: ConstrainedGenerator
 
-    class Config:
-        arbitrary_types_allowed = True
-
     def prompt_for_name(self) -> str:
-        prompt = "<|im_start|>system\nChoose the exact function name.\nFunctions:\n"
+        prompt = ("<|im_start|>system\nChoose the exact function name."
+                  "\nFunctions:\n")
+
         for f in self.functions_definition:
             prompt += f"- {f.name}: {f.description}\n"
-        prompt += f"<|im_end|>\n<|im_start|>user\n{self.user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+
+        prompt += (f"<|im_end|>\n<|im_start|>user\n{self.user_prompt}"
+                   "<|im_end|>\n<|im_start|>assistant\n")
+
         return prompt
 
     def machine_for_name(self) -> JsonStateMachine:
-        choices = {fn.name: StateTerminal() for fn in self.functions_definition}
-        return JsonStateMachine(current_state=StateBranch(choices=choices))
+        if not self.functions_definition:
+            return JsonStateMachine(current_state=StateTerminal())
+
+        choices: dict[str, State] = {}
+
+        for fn in self.functions_definition:
+            choices[fn.name] = StateTerminal()
+
+        branch_state = StateBranch(choices=choices)
+        return JsonStateMachine(current_state=branch_state)
 
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
+
         prompt = f"<|im_start|>system\nExtract params for {target_fn.name}.\n"
         prompt += f"Desc: {target_fn.description}\n<|im_end|>\n"
-        prompt += f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+        prompt += (f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n"
+                   "<|im_start|>assistant\n")
         return prompt
 
-    def machine_for_params(self, target_fn: FunctionDefinition) -> JsonStateMachine:
-        if not target_fn.parameters:
-            return JsonStateMachine(current_state=StateExpectLiteral(expected='{}', next_state=StateTerminal()))
+    def machine_for_params(
+            self, target_fn: FunctionDefinition) -> JsonStateMachine:
 
-        current_state = StateExpectLiteral(expected='\n}', next_state=StateTerminal())
+        if not target_fn.parameters:
+            empty_state = StateExpectLiteral(
+                expected='{}', next_state=StateTerminal())
+            return JsonStateMachine(current_state=empty_state)
+
+        tail_state = StateTerminal()
+        current_state: State = StateExpectLiteral(
+            expected='\n}', next_state=tail_state)
+
         params = list(target_fn.parameters.items())
 
         for i in reversed(range(len(params))):
             p_name, p_model = params[i]
-            val_state = StateParseNumber(next_state=current_state) if p_model.type == "number" else StateParseString(next_state=current_state)
-            inject_str = f'{{\n  "{p_name}": ' if i == 0 else f',\n  "{p_name}": '
-            current_state = StateExpectLiteral(expected=inject_str, next_state=val_state)
+
+            if p_model.type == "number":
+                val_state = StateParseNumber(next_state=current_state)
+            else:
+                val_state = StateParseString(next_state=current_state)
+
+            is_first = (i == 0)
+
+            prefix = (
+                f'{{\n  "{p_name}": ' if is_first else f',\n  "{p_name}": ')
+
+            current_state = StateExpectLiteral(
+                expected=prefix, next_state=val_state)
 
         return JsonStateMachine(current_state=current_state)
 
     def generate(self) -> dict[str, Any]:
         self.generator.machine = self.machine_for_name()
-        selected_name = self.generator.generate(self.prompt_for_name(), max_tokens=15)
+        name_prompt = self.prompt_for_name()
+        selected_name = self.generator.generate(name_prompt, 15)
 
-        target_fn = next((f for f in self.functions_definition if f.name == selected_name), None)
-        if not target_fn:
-            raise GenerationError(f"LLM generated function unknown : '{selected_name}'")
+        target_fn = None
+        for function in self.functions_definition:
+            if function.name == selected_name:
+                target_fn = function
+
+        if target_fn is None:
+            raise GenerationError(f"LLM generated an unknown function: "
+                                  f"'{selected_name}'")
 
         self.generator.machine = self.machine_for_params(target_fn)
-        params_str = self.generator.generate(self.prompt_for_params(target_fn), max_tokens=100)
+        params_prompt = self.prompt_for_params(target_fn)
+        params_str = self.generator.generate(params_prompt, 100)
 
         try:
             params_dict = json.loads(params_str) if params_str.strip() else {}
         except json.JSONDecodeError:
-            raise GenerationError(f"LLM generated JSON invalid : {params_str}")
+            raise GenerationError(f"LLM generated invalid JSON: {params_str}")
 
         return {
             "prompt": self.user_prompt,
@@ -78,8 +120,8 @@ class TwoStepJsonGenerator(BaseModel):
 
 
 def process_single_prompt_optimized(
-    user_prompt: str, 
-    functions_definition: list[FunctionDefinition], # <- Modifié ici
+    user_prompt: str,
+    functions_definition: list[FunctionDefinition],
     generator: ConstrainedGenerator
 ) -> dict[str, Any]:
 
