@@ -142,22 +142,47 @@ class StateParseString(State):
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
 
-        valid_ids: set[int] = set()
-
-        buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
         expected_next = getattr(self.next_state, 'expected', '')
+        buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
 
         if buffer_match:
-            overflow_len = len(self.buffer) - buffer_match.end()
-            if (overflow_len > 0 and not expected_next.startswith(
-                    self.buffer[buffer_match.end():])):
-                return valid_ids
+            return self._handle_closed_string(
+                match_end=buffer_match.end(),
+                expected_next=expected_next,
+                clean_vocab=clean_vocab,
+                vocab_filter=vocab_filter
+            )
 
-            remaining_expected = expected_next[overflow_len:]
-            if remaining_expected:
-                valid_ids.update(vocab_filter.get_literal_matches(
-                    remaining_expected, clean_vocab))
+        return self._handle_open_string(
+            expected_next=expected_next,
+            clean_vocab=clean_vocab,
+            vocab_filter=vocab_filter
+        )
+
+    def _handle_closed_string(
+            self, match_end: int, expected_next: str,
+            clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            ) -> set[int]:
+
+        valid_ids: set[int] = set()
+        overflow_len = len(self.buffer) - match_end
+
+        if overflow_len > 0 and not expected_next.startswith(
+                self.buffer[match_end:]):
             return valid_ids
+
+        remaining_expected = expected_next[overflow_len:]
+        if remaining_expected:
+            valid_ids.update(vocab_filter.get_literal_matches(
+                remaining_expected, clean_vocab))
+
+        return valid_ids
+
+    def _handle_open_string(
+            self, expected_next: str, clean_vocab: dict[int, str],
+            vocab_filter: VocabFilter) -> set[int]:
+
+        valid_ids: set[int] = set()
 
         has_opening_quote = self.buffer.lstrip().startswith('"')
         if has_opening_quote:
@@ -176,9 +201,7 @@ class StateParseString(State):
                 match = test_prefix(test_str)
                 if match:
                     overflow = test_str[match.end():]
-                    if not overflow:
-                        valid_ids.add(token_id)
-                    elif expected_next.startswith(overflow):
+                    if not overflow or expected_next.startswith(overflow):
                         valid_ids.add(token_id)
 
         return valid_ids

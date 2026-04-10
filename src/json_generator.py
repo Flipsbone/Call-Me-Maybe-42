@@ -59,6 +59,7 @@ class TwoStepJsonGenerator(BaseModel):
 
     def machine_for_params(
             self, target_fn: FunctionDefinition) -> JsonStateMachine:
+        val_state: State
 
         if not target_fn.parameters:
             empty_state = StateExpectLiteral(
@@ -120,10 +121,8 @@ class TwoStepJsonGenerator(BaseModel):
 
 
 def process_single_prompt_optimized(
-    user_prompt: str,
-    functions_definition: list[FunctionDefinition],
-    generator: ConstrainedGenerator
-) -> dict[str, Any]:
+    user_prompt: str, functions_definition: list[FunctionDefinition],
+        generator: ConstrainedGenerator) -> dict[str, Any]:
 
     json_gen = TwoStepJsonGenerator(
         user_prompt=user_prompt,

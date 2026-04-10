@@ -57,7 +57,7 @@ def main() -> None:
         else:
             print("\n No results were generated. File not saved.")
 
-        print(f"\n✓ All results successfully saved to {config.output_path}")
+    print(f"\n✓ All results successfully saved to {config.output_path}")
 
 
 if __name__ == "__main__":
