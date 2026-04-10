@@ -57,10 +57,16 @@ def main() -> None:
                 print(f"  {theme.GREEN}✓ Success:{theme.RESET}"
                       f"{result_dict.get('name', 'Unknown')}")
 
-            except Exception as e:
-                print(f"  {theme.RED}✗ Error prompt '{test_case.prompt}':"
-                      f"{e}.{theme.RESET}")
+            except ValueError as e:
+                print(f"  {theme.RED}✗ Generation error: {e}{theme.RESET}")
                 continue
+            except json.JSONDecodeError as e:
+                print(f"  {theme.RED}✗ JSON decode error: {e}{theme.RESET}")
+                continue
+            except Exception as e:
+                print(f"  {theme.RED}✗ Unexpected error: {e}{theme.RESET}")
+                continue
+
     except KeyboardInterrupt:
         print(f"\n{theme.RED}✗ User interrupted (Ctrl+C)."
               f"Shutting down...{theme.RESET}")
@@ -74,10 +80,13 @@ def main() -> None:
                 sys.exit(f"  ✗ Error saving the JSON file: {e}")
         else:
             print("\n No results were generated. File not saved.")
-    elapsed_time = time.time() - start_time
-    print(f"\n{theme.CYAN}Total execution time:"
-          f"{theme.GREEN}{elapsed_time:.2f}{theme.CYAN} seconds.{theme.RESET}")
-    print(f"\n✓ All results successfully saved to {config.output_path}")
+        print(f"\n✓ All results successfully saved to {config.output_path}")
+
+    finally:
+        elapsed_time = time.time() - start_time
+        print(f"\n{theme.CYAN}Total execution time:"
+              f"{theme.GREEN}{elapsed_time:.2f}"
+              f"{theme.CYAN} seconds.{theme.RESET}")
 
 
 if __name__ == "__main__":

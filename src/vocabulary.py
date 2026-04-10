@@ -1,7 +1,7 @@
 import sys
 import json
 import re
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, PrivateAttr
 from llm_sdk import Small_LLM_Model
 
 
@@ -60,6 +60,16 @@ class VocabIndex(BaseModel):
     clean_vocab: dict[int, str] = Field(default_factory=dict)
     size: int = Field(default=0)
     filter_vocab: VocabFilter = Field(default_factory=VocabFilter)
+    _token_to_id: dict[str, int] = PrivateAttr(default_factory=dict)
+
+    @property
+    def token_to_id(self) -> dict[str, int]:
+        if not self._token_to_id:
+            self._token_to_id = {
+                token_str: token_id
+                for token_id, token_str in self.clean_vocab.items()
+            }
+        return self._token_to_id
 
     @classmethod
     def from_model(cls, model: Small_LLM_Model) -> "VocabIndex":

@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 from llm_sdk import Small_LLM_Model
@@ -67,13 +66,13 @@ class ConstrainedGenerator(BaseModel):
             )
 
             if not valid_tokens:
-                sys.exit("Error No token available")
+                raise ValueError("No valid tokens available")
 
             token_id = self._choose_best_token(valid_tokens, input_ids)
             return self.vocab_index.clean_vocab[token_id]
 
         except Exception as e:
-            sys.exit(f"Error {e}")
+            raise ValueError(f"Error selecting token: {e}") from e
 
     def _choose_best_token(
             self, valid_tokens: set[int], input_ids: list[int]) -> int:
@@ -90,7 +89,4 @@ class ConstrainedGenerator(BaseModel):
         return int(valid_ids[np.argmax(scores)])
 
     def _get_token_id(self, token_str: str) -> int:
-        for token_id, token in self.vocab_index.clean_vocab.items():
-            if token == token_str:
-                return token_id
-        return -1
+        return self.vocab_index.token_to_id.get(token_str, -1)
