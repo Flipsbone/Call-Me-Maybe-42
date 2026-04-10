@@ -1,86 +1,113 @@
 import sys
 import json
 import re
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from llm_sdk import Small_LLM_Model
 
-from src.model_pydantic import (VocabSchema,
-                                VocabularyIndexSchema,
-                                VocabularyFilterSchema)
 
+class VocabFilter(BaseModel):
 
-class VocabularyFilter(VocabularyFilterSchema):
+    numeric_tokens: list[int] = Field(default_factory=list)
+    string_safe_tokens: list[int] = Field(default_factory=list)
+    string_unsafe_tokens: list[int] = Field(default_factory=list)
+    literal_cache: dict[str, set[int]] = Field(default_factory=dict)
 
-    def build(self, clean_vocab: dict[int, str]) -> None:
+    @classmethod
+    def from_clean_vocab(cls, clean_vocab: dict[int, str]) -> "VocabFilter":
+
+        numeric_tokens = []
+        string_safe_tokens = []
+        string_unsafe_tokens = []
+
         is_num_chunk = re.compile(r'^[ \n\r\t]*-?[\d.eE+-]*[ \n\r\t,}\]]*$')
+
         for token_id, token_str in clean_vocab.items():
             if is_num_chunk.match(token_str):
-                self.numeric_tokens.append(token_id)
+                numeric_tokens.append(token_id)
+
             if '"' not in token_str and '\\' not in token_str:
-                self.string_safe_tokens.append(token_id)
+                string_safe_tokens.append(token_id)
             else:
-                self.string_unsafe_tokens.append(token_id)
+                string_unsafe_tokens.append(token_id)
+
+        return cls(
+            numeric_tokens=numeric_tokens,
+            string_safe_tokens=string_safe_tokens,
+            string_unsafe_tokens=string_unsafe_tokens,
+        )
 
     def get_literal_matches(
-                            self,
-                            remainder: str,
-                            clean_vocab: dict[int, str]
-                            ) -> set[int]:
+            self, remainder: str, clean_vocab: dict[int, str]) -> set[int]:
 
         if remainder not in self.literal_cache:
-            self.literal_cache[remainder] = {
-                token_id for token_id, token_str in clean_vocab.items()
-                if (
-                    remainder.startswith(token_str)
-                    or token_str.startswith(remainder)
-                    )
-            }
+            matching_tokens = set()
+
+            for token_id, token_str in clean_vocab.items():
+                is_partial = remainder.startswith(token_str)
+                is_complete = token_str.startswith(remainder)
+
+                if is_partial or is_complete:
+                    matching_tokens.add(token_id)
+
+            self.literal_cache[remainder] = matching_tokens
+
         return self.literal_cache[remainder]
 
 
-class VocabularyIndex(VocabularyIndexSchema):
-    pruner: VocabularyFilter = Field(default_factory=VocabularyFilter)
+class VocabIndex(BaseModel):
+    vocab_path: str = Field(default="")
+    vocab: dict[str, int] = Field(default_factory=dict)
+    clean_vocab: dict[int, str] = Field(default_factory=dict)
+    size: int = Field(default=0)
+    filter_vocab: VocabFilter = Field(default_factory=VocabFilter)
 
-    def build_from_model(self, model: "Small_LLM_Model") -> None:
-        self.vocab_path = model.get_path_to_vocab_file()
-        self.vocab = self._load_vocab(self.vocab_path)
-        self.clean_vocab = self._build_clean_vocab(self.vocab, model)
-        self.size = len(self.vocab)
+    @classmethod
+    def from_model(cls, model: Small_LLM_Model) -> "VocabIndex":
 
-        self.pruner.build(self.clean_vocab)
+        vocab_path = model.get_path_to_vocab_file()
+        vocab = cls._load_vocab(vocab_path)
+        clean_vocab = cls._build_clean_vocab(vocab, model)
 
+        filter_vocab = VocabFilter.from_clean_vocab(clean_vocab)
+
+        return cls(
+            vocab_path=vocab_path,
+            vocab=vocab,
+            clean_vocab=clean_vocab,
+            size=len(vocab),
+            filter_vocab=filter_vocab
+        )
+
+    def get_literal_matches(self, remainder: str) -> set[int]:
+        return (
+            self.filter_vocab.get_literal_matches(remainder, self.clean_vocab)
+        )
+
+    @staticmethod
     def _build_clean_vocab(
-                            self,
-                            vocab: dict[str, int],
-                            model: "Small_LLM_Model"
-                            ) -> dict[int, str]:
+            vocab: dict[str, int], model: Small_LLM_Model) -> dict[int, str]:
 
         clean_dict = {}
-        for token_str, token_id in vocab.items():
+        for _, token_id in vocab.items():
             clean_str = model.decode([token_id])
             clean_dict[token_id] = clean_str
         return clean_dict
 
-    def _load_vocab(self, file_path: str) -> dict[str, int]:
+    @staticmethod
+    def _load_vocab(file_path: str) -> dict[str, int]:
         try:
             with open(file_path, 'r') as file_vocab:
-                raw_data = json.load(file_vocab)
-                validated_data = VocabSchema.model_validate(raw_data)
-            return validated_data.root
+                data = json.load(file_vocab)
+                if not isinstance(data, dict):
+                    sys.exit(f"Error: {file_path} must contain a JSON object.")
+                return data
 
         except PermissionError:
-            print("Error: Permission denied", file=sys.stderr)
-            sys.exit(1)
+            sys.exit("Error: Does not have right permission")
         except FileNotFoundError:
-            print(f"Error: Vocabulary file '{file_path}' not found.",
-                  file=sys.stderr)
-            sys.exit(1)
+            sys.exit(f"Error: File '{file_path}' not found.")
         except json.JSONDecodeError as e:
-            print(f"Error: Vocabulary file is not valid JSON. {e}",
-                  file=sys.stderr)
-            sys.exit(1)
+            sys.exit(f"Error: '{file_path}' is not valid JSON. {e.msg}")
         except ValidationError as e:
-            print("Error: Vocabulary file structure is invalid"
-                  f"(Pydantic). {e}",
-                  file=sys.stderr)
-            sys.exit(1)
+            sys.exit(f"Error: Data validation failed '{file_path}'"
+                     f".\nDetails:\n{e}")

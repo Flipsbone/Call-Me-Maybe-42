@@ -39,30 +39,25 @@ def setup_configuration() -> AppConfig:
             functions_definition=functions_def,
             function_calling_tests=calling_tests
         )
+
     except ValidationError as e:
-        print(f"CRITICAL ERROR: Global configuration invalid.\n{e}",
-              file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"CRITICAL ERROR: Global configuration invalid.\n{e}")
 
 
 def _load_json_data(file_path: Path, check_pydantic: type[BaseModel]) -> list:
 
     try:
+
         with file_path.open('r') as file:
             raw_data = json.load(file)
         return [check_pydantic.model_validate(item) for item in raw_data]
 
     except PermissionError:
-        print("Error: Does not have right permission", file=sys.stderr)
-        sys.exit(1)
+        sys.exit("Error: Does not have right permission")
     except FileNotFoundError:
-        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: File '{file_path}' not found.")
     except json.JSONDecodeError as e:
-        print(f"Error: '{file_path}' is not valid JSON. {e.msg}",
-              file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: '{file_path}' is not valid JSON. {e.msg}")
     except ValidationError as e:
-        print(f"Error: Data validation failed '{file_path}'.\nDetails:\n{e}",
-              file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: Data validation failed '{file_path}'."
+                 f"\nDetails:\n{e}")

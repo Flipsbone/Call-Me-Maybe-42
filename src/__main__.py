@@ -2,7 +2,7 @@ import sys
 import json
 
 from src.config import setup_configuration
-from src.vocabulary import VocabularyIndex
+from src.vocabulary import VocabIndex
 from src.generator import ConstrainedGenerator
 from src.model_pydantic import FunctionCallResult
 from src.json_generator import process_single_prompt_optimized
@@ -12,45 +12,46 @@ from src.state_machine import JsonStateMachine, StateTerminal
 
 def main() -> None:
     config = setup_configuration()
+    print("Initializing the LLM model and vocabulary...")
 
     try:
-        print("Initializing the LLM model and vocabulary...")
         llm = Small_LLM_Model()
-        vocab = VocabularyIndex()
-        vocab.build_from_model(model=llm)
+        vocab = VocabIndex.from_model(llm)
+    except RuntimeError as e:
+        sys.exit(f"Error memory GPU/CPU during the loading : {e}")
+    except Exception as e:
+        sys.exit(f"CRITICAL ERROR: {e}")
 
-        initial_machine = JsonStateMachine(current_state=StateTerminal())
-        generator = ConstrainedGenerator(
-            llm=llm, vocab_index=vocab, machine=initial_machine)
+    initial_machine = JsonStateMachine(current_state=StateTerminal())
+    generator = ConstrainedGenerator(
+        llm=llm, vocab_index=vocab, machine=initial_machine)
 
-        results = []
+    results = []
 
-        for test_case in config.function_calling_tests:
-            print(f"Processing: '{test_case.prompt}'...")
-            try:
-                result_dict = process_single_prompt_optimized(
-                    test_case.prompt,
-                    config.functions_definition,
-                    generator
-                )
-                validated_result = FunctionCallResult.model_validate(
-                    result_dict)
-                results.append(validated_result.model_dump())
-                print(f"  ✓ Success: {result_dict.get('name', 'Unknown')}")
+    for test_case in config.function_calling_tests:
+        print(f"Processing: '{test_case.prompt}'...")
+        try:
+            result_dict = process_single_prompt_optimized(
+                test_case.prompt,
+                config.functions_definition,
+                generator
+            )
+            validated_result = FunctionCallResult.model_validate(
+                result_dict)
+            results.append(validated_result.model_dump())
+            print(f"  ✓ Success: {result_dict.get('name', 'Unknown')}")
 
-            except Exception as e:
-                print(f"  ✗ Error on prompt '{test_case.prompt}': {e}",
-                      file=sys.stderr)
-                continue
+        except Exception as e:
+            sys.exit(f"  ✗ Error on prompt '{test_case.prompt}': {e}")
+            continue
 
-        with config.output_path.open('w') as file_out:
-            json.dump(results, file_out, indent=2, ensure_ascii=False)
+        try:
+            with config.output_path.open('w') as file_out:
+                json.dump(results, file_out, indent=2, ensure_ascii=False)
+        except OSError as e:
+            sys.exit(f"  ✗ Error saving the JSON file: {e}")
 
         print(f"\n✓ All results successfully saved to {config.output_path}")
-
-    except Exception as e:
-        print(f"CRITICAL ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
 
 
 if __name__ == "__main__":
