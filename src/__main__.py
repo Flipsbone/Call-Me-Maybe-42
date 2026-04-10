@@ -2,12 +2,12 @@ import sys
 import json
 
 from src.config import setup_configuration
+from src.functions_validator import FunctionCallResult
 from src.vocabulary import VocabIndex
 from src.generator import ConstrainedGenerator
-from src.model_pydantic import FunctionCallResult
 from src.json_generator import process_single_prompt_optimized
-from llm_sdk import Small_LLM_Model
 from src.state_machine import JsonStateMachine, StateTerminal
+from llm_sdk import Small_LLM_Model
 
 
 def main() -> None:
@@ -45,11 +45,14 @@ def main() -> None:
             sys.exit(f"  ✗ Error on prompt '{test_case.prompt}': {e}")
             continue
 
-        try:
-            with config.output_path.open('w') as file_out:
-                json.dump(results, file_out, indent=2, ensure_ascii=False)
-        except OSError as e:
-            sys.exit(f"  ✗ Error saving the JSON file: {e}")
+        if results:
+            try:
+                with config.output_path.open('w') as file_out:
+                    json.dump(results, file_out, indent=2, ensure_ascii=False)
+            except OSError as e:
+                sys.exit(f"  ✗ Error saving the JSON file: {e}")
+        else:
+            print("\n No results were generated. File not saved.")
 
         print(f"\n✓ All results successfully saved to {config.output_path}")
 
