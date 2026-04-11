@@ -2,14 +2,15 @@ import sys
 import json
 import time
 
+from pydantic import BaseModel, Field
+from llm_sdk import Small_LLM_Model
 from src.config import setup_configuration
 from src.functions_validator import FunctionCallResult
 from src.vocabulary import VocabIndex
 from src.generator import ConstrainedGenerator
-from src.json_generator import process_single_prompt_optimized
+from src.json_generator import (process_single_prompt_optimized,
+                                GenerationJsonError)
 from src.state_machine import JsonStateMachine, StateTerminal
-from llm_sdk import Small_LLM_Model
-from pydantic import BaseModel, Field
 
 
 class TerminalColor(BaseModel):
@@ -60,7 +61,7 @@ def main() -> None:
             except ValueError as e:
                 print(f"  {theme.RED}✗ Generation error: {e}{theme.RESET}")
                 continue
-            except json.JSONDecodeError as e:
+            except GenerationJsonError as e:
                 print(f"  {theme.RED}✗ JSON decode error: {e}{theme.RESET}")
                 continue
             except Exception as e:

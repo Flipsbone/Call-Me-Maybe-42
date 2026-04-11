@@ -15,7 +15,7 @@ from src.state_machine import (
 )
 
 
-class GenerationError(Exception):
+class GenerationJsonError(Exception):
     pass
 
 
@@ -101,8 +101,8 @@ class TwoStepJsonGenerator(BaseModel):
                 target_fn = function
 
         if target_fn is None:
-            raise GenerationError(f"LLM generated an unknown function: "
-                                  f"'{selected_name}'")
+            raise GenerationJsonError(f"LLM generated an unknown function: "
+                                      f"'{selected_name}'")
 
         self.generator.machine = self.machine_for_params(target_fn)
         params_prompt = self.prompt_for_params(target_fn)
@@ -111,7 +111,8 @@ class TwoStepJsonGenerator(BaseModel):
         try:
             params_dict = json.loads(params_str) if params_str.strip() else {}
         except json.JSONDecodeError:
-            raise GenerationError(f"LLM generated invalid JSON: {params_str}")
+            raise GenerationJsonError("LLM generated invalid JSON:"
+                                      f"{params_str}")
 
         return {
             "prompt": self.user_prompt,
