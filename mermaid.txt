@@ -1,0 +1,39 @@
+graph TD
+    %% Définition des couleurs pour une belle intégration GitHub/GitLab
+    classDef main_file fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#333;
+    classDef init_file fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#333;
+    classDef core_file fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#333;
+    classDef rule_file fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#333;
+    classDef valid_file fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#333;
+
+    subgraph "L'Orchestration"
+        Main(("<b>__main__.py</b><br/>Le Chef d'Orchestre qui reçoit<br/>la demande et dirige tout"))
+    end
+    class Main main_file;
+
+    subgraph "1. La Préparation (Les Règles du jeu)"
+        Config["<b>config.py</b><br/>Charge les instructions et le but"]
+        Vocab["<b>vocabulary.py</b><br/>Prépare les mots que l'IA connaît"]
+        Main -->|1. Organise le projet| Config
+        Main -->|2. Prépare le langage| Vocab
+    end
+    class Config,Vocab init_file;
+
+    subgraph "2. Le Cœur (Le Rédacteur et son Gardien)"
+        JsonGen{"<b>json_generator.py</b><br/>Sépare la réflexion en 2 étapes simples"}
+        Gen["<b>generator.py</b><br/>L'IA rédige la réponse mot par mot"]
+        State["<b>state_machine.py</b><br/>Le Gardien strict qui bloque les erreurs"]
+        
+        Main -->|3. Envoie la mission| JsonGen
+        JsonGen <-->|Pilote la rédaction| Gen
+        Gen <-->|Surveille et valide chaque mot| State
+    end
+    class JsonGen,Gen core_file;
+    class State rule_file;
+
+    subgraph "3. La Vérification"
+        Valid["<b>functions_validator.py</b><br/>Le Contrôle Qualité Final"]
+        JsonGen -->|4. Soumet le texte terminé| Valid
+        Valid -->|5. Valide et sauvegarde le résultat| Main
+    end
+    class Valid valid_file;

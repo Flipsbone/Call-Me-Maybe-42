@@ -128,8 +128,8 @@ class StateParseNumber(State):
         match = REGEX_PREFIX_NUMBER.match(self.buffer)
         if match:
             num_part = match.group()
-            ws_len = len(self.buffer) - len(self.buffer.lstrip())
-            overflow = self.buffer[ws_len + len(num_part):]
+            whitespace_len = len(self.buffer) - len(self.buffer.lstrip())
+            overflow = self.buffer[whitespace_len + len(num_part):]
             if overflow and overflow[0] in ',}]\n':
                 next_s = (
                     self.next_state if self.next_state else StateTerminal())
