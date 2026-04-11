@@ -1,3 +1,5 @@
+PROJET : 
+
 graph TD
     %% Définition des couleurs pour une belle intégration GitHub/GitLab
     classDef main_file fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#333;
@@ -37,3 +39,76 @@ graph TD
         Valid -->|5. Valide et sauvegarde le résultat| Main
     end
     class Valid valid_file;
+
+
+    Vocab.py : 
+    graph TD
+    classDef model fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#333;
+    classDef index fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#333;
+    classDef filter fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#333;
+    classDef helper fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#333;
+
+    LLM(("<b>Small_LLM_Model</b><br/>(SDK externe)"))
+    
+    subgraph "Classe : VocabIndex (Le Chef d'Orchestre)"
+        direction TB
+        InitIdx["<b>from_model()</b><br/>Point d'entrée. Orchestre la création"]
+        Load["<b>_load_vocab()</b><br/>Lit le JSON brut du disque"]
+        Clean["<b>_build_clean_vocab()</b><br/>Traduit les IDs en vrai texte via le LLM"]
+        Prop["<b>@property token_to_id</b><br/>Dictionnaire inversé (Lazy Loading)"]
+    end
+
+    subgraph "Classe : VocabFilter (Le Trieur)"
+        direction TB
+        InitFil["<b>from_clean_vocab()</b><br/>Analyse tous les tokens"]
+        Sort["Trie les tokens en 3 listes :<br/>1. Nombres (Regex)<br/>2. Texte Sûr<br/>3. Texte Dangereux"]
+        Cache["<b>get_literal_matches()</b><br/>Cherche les correspondances et les met en cache"]
+    end
+
+    LLM -->|Fournit chemin & décodeur| InitIdx
+    InitIdx --> Load
+    Load --> Clean
+    Clean --> InitFil
+    InitFil --> Sort
+    
+    InitIdx -->|Crée et stocke l'instance| InitFil
+    Cache -.->|Utilisé pendant la génération| InitIdx
+
+    class LLM model;
+    class InitIdx,Load,Clean,Prop index;
+    class InitFil,Sort,Cache filter;
+
+
+vacab_filter: 
+flowchart TD
+    Start([Début : Appel de from_clean_vocab])
+    Init[Création des 3 listes vides :<br/>numeric_tokens<br/>string_safe_tokens<br/>string_unsafe_tokens]
+    
+    Start --> Init
+    Init --> Loop
+
+    Loop{Boucle sur chaque token}
+    
+    Loop -->|Token suivant| CheckNum{1. Match Regex Nombre ?}
+    CheckNum -->|Oui| AddNum[Ajout à numeric_tokens]
+    CheckNum -->|Non| CheckString
+    AddNum --> CheckString
+    
+    CheckString{2. Contient des guillemets<br/>ou un antislash ?}
+    CheckString -->|Non| AddSafe[Ajout à string_safe_tokens]
+    CheckString -->|Oui| AddUnsafe[Ajout à string_unsafe_tokens]
+    
+    AddSafe --> Loop
+    AddUnsafe --> Loop
+    
+    Loop -->|Fin du vocabulaire| CreateObject[Instanciation de VocabFilter]
+    CreateObject --> End([Fin : Objet retourné])
+
+    style Start fill:#f9f,stroke:#333
+    style End fill:#f9f,stroke:#333
+    style Init fill:#bbf,stroke:#333
+    style Loop fill:#ff9,stroke:#333
+    style CreateObject fill:#bbf,stroke:#333
+    style AddNum fill:#cfc,stroke:#333
+    style AddSafe fill:#cfc,stroke:#333
+    style AddUnsafe fill:#cfc,stroke:#333
