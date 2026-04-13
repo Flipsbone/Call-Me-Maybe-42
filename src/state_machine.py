@@ -5,8 +5,8 @@ from src.vocabulary import VocabFilter
 
 WS = r'[ \n\r\t]*'
 
-REGEX_PARTIAL_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*$')
-REGEX_PREFIX_STRING = re.compile(f'^{WS}"([^"\\\\]|\\\\.)*"')
+REGEX_PARTIAL_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*$')
+REGEX_PREFIX_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*"')
 
 REGEX_PARTIAL_NUMBER = re.compile(
     fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
