@@ -1,71 +1,41 @@
 [
   {
-    "name": "fn_add_numbers",
-    "description": "Add two numbers together and return their sum.",
+    "name": "fn_filter_even_numbers",
+    "description": "Filtre un tableau d'entiers pour ne retourner que les nombres pairs.",
     "parameters": {
-      "a": {
-        "type": "number"
+      "numbers": {
+        "type": "array"
+      }
+    },
+    "returns": {
+      "type": "array"
+    }
+  },
+  {
+    "name": "fn_is_user_active",
+    "description": "Vérifie si le statut fourni correspond à un utilisateur actif.",
+    "parameters": {
+      "is_active": {
+        "type": "boolean"
+      }
+    },
+    "returns": {
+      "type": "boolean"
+    }
+  },
+  {
+    "name": "fn_process_data",
+    "description": "Traite une liste d'éléments avec une option pour activer ou désactiver le tri.",
+    "parameters": {
+      "items": {
+        "type": "array"
       },
-      "b": {
-        "type": "number"
+      "enable_sorting": {
+        "type": "boolean"
       }
     },
     "returns": {
-      "type": "number"
-    }
-  },
-  {
-    "name": "fn_greet",
-    "description": "Generate a greeting message for a person by name.",
-    "parameters": {
-      "name": {
-        "type": "string"
-      }
-    },
-    "returns": {
-      "type": "string"
-    }
-  },
-  {
-    "name": "fn_reverse_string",
-    "description": "Reverse a string and return the reversed result.",
-    "parameters": {
-      "s": {
-        "type": "string"
-      }
-    },
-    "returns": {
-      "type": "string"
-    }
-  },
-  {
-    "name": "fn_get_square_root",
-    "description": "Calculate the square root of a number.",
-    "parameters": {
-      "a": {
-        "type": "number"
-      }
-    },
-    "returns": {
-      "type": "number"
-    }
-  },
-  {
-    "name": "fn_substitute_string_with_regex",
-    "description": "Replace all occurrences matching a regex pattern in a string.",
-    "parameters": {
-      "source_string": {
-        "type": "string"
-      },
-      "regex": {
-        "type": "string"
-      },
-      "replacement": {
-        "type": "string"
-      }
-    },
-    "returns": {
-      "type": "string"
+      "type": "array"
     }
   }
 ]

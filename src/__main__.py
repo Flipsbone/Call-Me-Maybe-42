@@ -68,6 +68,17 @@ def main() -> None:
                 print(f"  {theme.RED}✗ Unexpected error: {e}{theme.RESET}")
                 continue
 
+            if results:
+                try:
+                    with config.output_path.open('w') as file_out:
+                        json.dump(
+                            results, file_out, indent=2, ensure_ascii=False)
+                except OSError as e:
+                    sys.exit(f"  ✗ Error saving the JSON file: {e}")
+            else:
+                print("\n No results were generated. File not saved.")
+        print(f"\n✓ All results successfully saved to {config.output_path}")
+
     except KeyboardInterrupt:
         print(f"\n{theme.RED}✗ User interrupted (Ctrl+C)."
               f"Shutting down...{theme.RESET}")

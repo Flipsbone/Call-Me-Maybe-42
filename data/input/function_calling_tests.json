@@ -1,34 +1,23 @@
 [
   {
-    "prompt": "Calcule la somme de 0 et -0",
-    "note": "Teste la gestion du zéro signé en flottant."
+    "prompt": "Le statut de l'utilisateur est true, est-il actif ?"
   },
   {
-    "prompt": "Inverse la chaîne : '   '",
-    "note": "Teste une chaîne composée uniquement d'espaces (edge case classique de tokenisation)."
+    "prompt": "Filtre les nombres pairs de la liste [1, 2, 3, 4, 5, 6]"
   },
   {
-    "prompt": "",
-    "note": "Teste l'insertion de syntaxe JSON à l'intérieur d'une valeur de chaîne (risque de confusion pour le décodeur)."
+    "prompt": "Vérifie si l'utilisateur est actif sachant que la valeur est false."
   },
   {
-    "prompt": "Additionne 1e3 et 200",
-    "note": "Vérifie si votre système accepte la notation scientifique comme entrée numérique."
+    "prompt": "Traite les données suivantes : ['pomme', 'banane', 'cerise'] en activant le tri (true)."
   },
   {
-    "prompt": "Reverse 'L'arbre est tombé\\nle vent souffle.'",
-    "note": "Teste les caractères d'échappement comme le saut de ligne dans une chaîne."
+    "prompt": "Filtre les nombres d'un tableau vide []"
   },
   {
-    "prompt": "Donne le résultat de 9007199254740991 + 1",
-    "note": "Teste la limite de précision des entiers (Number.MAX_SAFE_INTEGER)."
+    "prompt": "Process la liste de données avec le tri désactivé. Les données sont : [10.5, -3, 0]"
   },
   {
-    "prompt": "Greet ''",
-    "note": "Chaîne vide : le décodeur doit être capable de fermer les guillemets immédiatement."
-  },
-  {
-    "prompt": "Fais la somme de 42 et 'erreur'",
-    "note": "Cas d'erreur : le modèle doit-il quand même tenter de générer un nombre ou échouer proprement ? [cite: 149]"
+    "prompt": "Applique le filtre sur [  ], avec beaucoup d'espaces."
   }
 ]
