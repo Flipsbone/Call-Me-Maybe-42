@@ -1,0 +1,19 @@
+from pydantic import BaseModel, Field
+from typing import Any
+
+
+class ParameterModel(BaseModel):
+    type: str | None = None
+
+
+class FunctionDefinition(BaseModel):
+    name: str
+    description: str
+    parameters: dict[str, ParameterModel] = Field(default_factory=dict)
+    returns: ParameterModel
+
+
+class FunctionCallResult(BaseModel):
+    prompt: str
+    name: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
