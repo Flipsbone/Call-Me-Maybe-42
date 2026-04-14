@@ -8,16 +8,39 @@ from src.functions_validator import FunctionDefinition
 
 
 class FunctionCallingTest(BaseModel):
+    """Single prompt used to validate function-calling generation."""
+
     prompt: str
 
 
 class AppConfig(BaseModel):
+    """Validated application configuration loaded from CLI arguments.
+
+    Attributes:
+        output_path (Path): Destination path for the JSON results.
+        functions_definition (list[FunctionDefinition]): List of available
+            function signatures.
+        function_calling_tests (list[FunctionCallingTest]): List of test
+            prompts to process.
+    """
+
     output_path: Path
     functions_definition: list[FunctionDefinition]
     function_calling_tests: list[FunctionCallingTest]
 
 
 def setup_configuration() -> AppConfig:
+    """Parse CLI arguments and load the global application configuration.
+
+    Returns:
+        AppConfig: Instance containing paths and validated input data.
+
+    Raises:
+        SystemExit: If an input file is missing or if the output
+            directory cannot be created.
+        ValidationError: If the JSON data structure does not match
+            the expected models.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,
                         default=Path("data/input/functions_definition.json"))
@@ -56,6 +79,19 @@ def setup_configuration() -> AppConfig:
 
 def _load_json_data(
         file_path: Path, model_class: type[BaseModel]) -> list[Any]:
+    """Load a JSON array and validate each item via a Pydantic model.
+
+    Args:
+        file_path: Path to the JSON file to read.
+        model_class: Pydantic model used for unit validation.
+
+    Returns:
+        list[Any]: List of validated objects of type `model_class`.
+
+    Raises:
+        SystemExit: In case of a read error, malformed JSON, or data
+            that does not conform to the model.
+    """
     try:
         with file_path.open('r') as file:
             raw_data = json.load(file)

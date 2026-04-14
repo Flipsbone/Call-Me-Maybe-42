@@ -15,6 +15,12 @@ REGEX_PREFIX_NUMBER = re.compile(
 
 
 class State(BaseModel, ABC):
+    """Abstract base class for constrained decoding states.
+
+    Attributes:
+        buffer (str): Temporary text accumulator for the current state.
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     buffer: str = Field(default="")
 
@@ -22,30 +28,47 @@ class State(BaseModel, ABC):
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Return token ids that are valid for the current buffer."""
         pass
 
     @abstractmethod
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume a token fragment and determine the next state.
+
+        Args:
+            token_str: Raw text fragment produced by the model.
+
+        Returns:
+            tuple[State, str]: A tuple containing the new state
+                (or itself) and the overflow text not consumed.
+        """
         pass
 
 
 class StateTerminal(State):
+    """Terminal state indicating that generation is complete."""
+
     def get_valid_tokens(
             self, clean_vocab: dict[int, str],
             vocab_filter: VocabFilter) -> set[int]:
+        """Terminal states accept no further tokens."""
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Remain terminal and discard any incoming token fragment."""
         return self, ""
 
 
 class StateExpectLiteral(State):
+    """State that requires a fixed literal prefix or suffix."""
+
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Return tokens that can continue or complete the expected text."""
 
         if not self.expected.startswith(self.buffer):
             return set()
@@ -57,6 +80,7 @@ class StateExpectLiteral(State):
         return vocab_filter.get_literal_matches(remainder, clean_vocab)
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Advance the literal buffer and return any overflow text."""
         self.buffer += token_str
         if self.buffer.startswith(self.expected):
             overflow = self.buffer[len(self.expected):]
@@ -66,11 +90,14 @@ class StateExpectLiteral(State):
 
 
 class StateBranch(State):
+    """State that accepts one of several literal choices."""
+
     choices: dict[str, State] = Field(...)
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Return tokens that can extend any currently matching branch."""
 
         valid_ids: set[int] = set()
 
@@ -85,6 +112,7 @@ class StateBranch(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple[State, str]:
+        """Advance the branch buffer and move to the matching next state."""
         self.buffer += token_str
         for choice, next_s in self.choices.items():
             if self.buffer.startswith(choice):
@@ -94,11 +122,19 @@ class StateBranch(State):
 
 
 class StateParseNumber(State):
+    """State incrementally validating a number in JSON format.
+
+    Attributes:
+        next_state (State | None): State to transition to after the
+            number is fully parsed.
+    """
+
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Return token ids that keep the buffered text a valid number."""
 
         valid_ids: set[int] = set()
 
@@ -124,6 +160,7 @@ class StateParseNumber(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume numeric text and advance once a delimiter is found."""
         self.buffer += token_str
         match = REGEX_PREFIX_NUMBER.match(self.buffer)
         if match:
@@ -138,11 +175,14 @@ class StateParseNumber(State):
 
 
 class StateParseString(State):
+    """State that incrementally validates a JSON string literal."""
+
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Return token ids that keep the buffered text a valid string."""
 
         expected_next = getattr(self.next_state, 'expected', '')
         buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
@@ -165,6 +205,7 @@ class StateParseString(State):
             self, match_end: int, expected_next: str,
             clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Handle a string that is already closed and may expose overflow."""
 
         valid_ids: set[int] = set()
         overflow_len = len(self.buffer) - match_end
@@ -183,6 +224,7 @@ class StateParseString(State):
     def _handle_open_string(
             self, expected_next: str, clean_vocab: dict[int, str],
             vocab_filter: VocabFilter) -> set[int]:
+        """Handle a string that is still open and must remain valid JSON."""
 
         valid_ids: set[int] = set()
 
@@ -209,6 +251,7 @@ class StateParseString(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume string text and advance once a full string is matched."""
         self.buffer += token_str
         match = REGEX_PREFIX_STRING.match(self.buffer)
         if match:
@@ -220,16 +263,20 @@ class StateParseString(State):
 
 
 class JsonStateMachine(BaseModel):
+    """Wrapper around the current constrained-decoding state."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     current_state: State
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
+        """Delegate valid-token discovery to the active state."""
 
         return self.current_state.get_valid_tokens(clean_vocab, vocab_filter)
 
     def step(self, token_str: str) -> None:
+        """Advance the machine by consuming a token fragment."""
         overflow = token_str
         state = self.current_state
         while overflow and not isinstance(state, StateTerminal):

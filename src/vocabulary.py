@@ -6,6 +6,16 @@ from llm_sdk import Small_LLM_Model
 
 
 class VocabFilter(BaseModel):
+    """Token groups and caches used for fast filtering.
+
+    Attributes:
+        numeric_tokens (list[int]): IDs of tokens that can form numbers.
+        string_safe_tokens (list[int]): Tokens containing no quotes or
+            escape characters.
+        string_unsafe_tokens (list[int]): Complex tokens requiring regex
+            validation.
+        literal_cache (dict[str, set[int]]): Cache for literal matches.
+    """
 
     numeric_tokens: list[int] = Field(default_factory=list)
     string_safe_tokens: list[int] = Field(default_factory=list)
@@ -14,6 +24,14 @@ class VocabFilter(BaseModel):
 
     @classmethod
     def from_clean_vocab(cls, clean_vocab: dict[int, str]) -> "VocabFilter":
+        """Classify vocabulary tokens by how they can be safely used.
+
+        Args:
+            clean_vocab: Mapping from token id to decoded token string.
+
+        Returns:
+            VocabFilter: Token groups ready for constrained decoding.
+        """
 
         numeric_tokens = []
         string_safe_tokens = []
@@ -38,6 +56,15 @@ class VocabFilter(BaseModel):
 
     def get_literal_matches(
             self, remainder: str, clean_vocab: dict[int, str]) -> set[int]:
+        """Return tokens that can match a literal prefix or completion.
+
+        Args:
+            remainder: Remaining literal text that must be matched.
+            clean_vocab: Mapping from token id to decoded token string.
+
+        Returns:
+            set[int]: Token ids that can satisfy the literal remainder.
+        """
 
         if remainder not in self.literal_cache:
             matching_tokens = set()
@@ -55,6 +82,17 @@ class VocabFilter(BaseModel):
 
 
 class VocabIndex(BaseModel):
+    """Complete vocabulary index and search utilities.
+
+    Attributes:
+        vocab_path (str): Path to the source vocabulary file.
+        vocab (dict[str, int]): Raw text-to-ID mapping.
+        clean_vocab (dict[int, str]): Decoded ID-to-text mapping.
+        size (int): Total number of tokens in the vocabulary.
+        filter_vocab (VocabFilter): Pre-calculated filters for the
+            state machine.
+    """
+
     vocab_path: str = Field(default="")
     vocab: dict[str, int] = Field(default_factory=dict)
     clean_vocab: dict[int, str] = Field(default_factory=dict)
@@ -64,6 +102,7 @@ class VocabIndex(BaseModel):
 
     @property
     def token_to_id(self) -> dict[str, int]:
+        """Return a reverse mapping from token string to token id."""
         if not self._token_to_id:
             self._token_to_id = {
                 token_str: token_id
@@ -73,6 +112,14 @@ class VocabIndex(BaseModel):
 
     @classmethod
     def from_model(cls, model: Small_LLM_Model) -> "VocabIndex":
+        """Build a vocabulary index from an LLM model instance.
+
+        Args:
+            model: The model used to load and decode the vocabulary.
+
+        Returns:
+            VocabIndex: Fully prepared vocabulary index and filters.
+        """
 
         vocab_path = model.get_path_to_vocab_file()
         vocab = cls._load_vocab(vocab_path)
@@ -89,6 +136,7 @@ class VocabIndex(BaseModel):
         )
 
     def get_literal_matches(self, remainder: str) -> set[int]:
+        """Delegate literal-token lookup to the cached filter."""
         return (
             self.filter_vocab.get_literal_matches(remainder, self.clean_vocab)
         )
@@ -96,6 +144,7 @@ class VocabIndex(BaseModel):
     @staticmethod
     def _build_clean_vocab(
             vocab: dict[str, int], model: Small_LLM_Model) -> dict[int, str]:
+        """Decode token ids into a cleaned id-to-string vocabulary."""
 
         clean_dict = {}
         for _, token_id in vocab.items():
@@ -105,6 +154,7 @@ class VocabIndex(BaseModel):
 
     @staticmethod
     def _load_vocab(file_path: str) -> dict[str, int]:
+        """Load the raw vocabulary mapping from a JSON file."""
         try:
             with open(file_path, 'r') as file_vocab:
                 data = json.load(file_vocab)

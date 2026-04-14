@@ -14,6 +14,8 @@ from src.state_machine import JsonStateMachine, StateTerminal
 
 
 class TerminalColor(BaseModel):
+    """ANSI color codes used for terminal status messages."""
+
     GREEN: str = Field(default="\033[92m", frozen=True)
     RED: str = Field(default="\033[91m", frozen=True)
     CYAN: str = Field(default="\033[96m", frozen=True)
@@ -21,6 +23,16 @@ class TerminalColor(BaseModel):
 
 
 def main() -> None:
+    """Run the function-calling generation workflow.
+
+    The entry point loads configuration, initializes the model and
+    vocabulary, processes each test case, and writes the accumulated
+    results to disk.
+
+    Returns:
+        None: This function performs I/O and exits the process on fatal
+        errors.
+    """
     start_time = time.time()
     theme = TerminalColor()
     config = setup_configuration()

@@ -10,12 +10,33 @@ from src.state_machine import (
 
 
 class ConstrainedGenerator(BaseModel):
+    """Text generator applying constraints via a state machine.
+
+    Attributes:
+        llm (Small_LLM_Model): Instance of the language model used.
+        vocab_index (VocabIndex): Vocabulary index and associated filters.
+        machine (JsonStateMachine): State machine guiding generation.
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model
     vocab_index: VocabIndex
     machine: JsonStateMachine
 
     def generate(self, prompt: str, max_tokens: int = 150) -> str:
+        """Produce a completion respecting the current machine state.
+
+        Args:
+            prompt: Input text serving as context for the model.
+            max_tokens: Maximum number of tokens to generate.
+
+        Returns:
+            str: The generated and validated string.
+
+        Raises:
+            ValueError: If no valid token is found or if the token
+                budget is exceeded before reaching a terminal state.
+        """
         input_ids = self.llm.encode(prompt)[0].tolist()
         generated_text = ""
         token_count = 0
@@ -44,11 +65,21 @@ class ConstrainedGenerator(BaseModel):
         return generated_text
 
     def _should_stop(self, token_count: int, max_tokens: int) -> bool:
+        """Return whether generation should stop."""
         return (isinstance(self.machine.current_state, StateTerminal) or
                 token_count >= max_tokens)
 
     def _add_literal(
             self, state: StateExpectLiteral, generated_text: str) -> str:
+        """Add the fixed text fragment required by the current state.
+
+        Args:
+            state: The literal state currently being processed.
+            generated_text: The text already produced by the generator.
+
+        Returns:
+            str: Updated text including the expected literal fragment.
+        """
 
         expected = state.expected
         buffer_len = len(state.buffer)
@@ -59,6 +90,18 @@ class ConstrainedGenerator(BaseModel):
         return generated_text
 
     def _select_next_token(self, input_ids: list[int]) -> str | None:
+        """Choose the next valid token string from the constrained set.
+
+        Args:
+            input_ids: Tokenized prompt plus previously generated tokens.
+
+        Returns:
+            str | None: The next token string, or `None` if no token can be
+            selected.
+
+        Raises:
+            ValueError: If no valid token is available or selection fails.
+        """
         try:
             valid_tokens = self.machine.get_valid_tokens(
                 self.vocab_index.clean_vocab,
@@ -76,6 +119,15 @@ class ConstrainedGenerator(BaseModel):
 
     def _choose_best_token(
             self, valid_tokens: set[int], input_ids: list[int]) -> int:
+        """Select the highest-scoring token among valid candidates.
+
+        Args:
+            valid_tokens: Candidate token ids allowed by the state machine.
+            input_ids: Tokenized prompt plus previously generated tokens.
+
+        Returns:
+            int: The chosen token id.
+        """
 
         if len(valid_tokens) == 1:
             return next(iter(valid_tokens))
@@ -89,4 +141,5 @@ class ConstrainedGenerator(BaseModel):
         return int(valid_ids[np.argmax(scores)])
 
     def _get_token_id(self, token_str: str) -> int:
+        """Return the token id for a decoded token string."""
         return self.vocab_index.token_to_id.get(token_str, -1)

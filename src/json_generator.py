@@ -16,16 +16,31 @@ from src.state_machine import (
 
 
 class GenerationJsonError(Exception):
+    """Raised when generated output cannot be converted to valid JSON."""
+
     pass
 
 
 class TwoStepJsonGenerator(BaseModel):
+    """Generator for function calls in two constrained steps.
+
+    Attributes:
+        user_prompt (str): The user's natural language request.
+        functions_definition (list[FunctionDefinition]): Available tools.
+        generator (ConstrainedGenerator): Constrained generation engine.
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
     functions_definition: list[FunctionDefinition]
     generator: ConstrainedGenerator
 
     def prompt_for_name(self) -> str:
+        """Build the prompt used to select the target function name.
+
+        Returns:
+            str: Chat-style prompt describing the available functions.
+        """
         prompt = ("<|im_start|>system\nChoose the exact function name."
                   "\nFunctions:\n")
 
@@ -38,6 +53,7 @@ class TwoStepJsonGenerator(BaseModel):
         return prompt
 
     def machine_for_name(self) -> JsonStateMachine:
+        """Create a state machine that accepts only valid function names."""
         if not self.functions_definition:
             return JsonStateMachine(current_state=StateTerminal())
 
@@ -50,6 +66,15 @@ class TwoStepJsonGenerator(BaseModel):
         return JsonStateMachine(current_state=branch_state)
 
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
+        """Build the prompt used to extract parameters for one function.
+
+        Args:
+            target_fn: Selected function definition whose parameters should
+                be extracted.
+
+        Returns:
+            str: Chat-style prompt focused on parameter extraction.
+        """
         params_info = (", ".join(
             [f"'{p_name}' ({p_model.type})"
              for p_name, p_model in target_fn.parameters.items()]))
@@ -70,6 +95,15 @@ class TwoStepJsonGenerator(BaseModel):
 
     def machine_for_params(
             self, target_fn: FunctionDefinition) -> JsonStateMachine:
+        """Create a state machine that emits JSON for one function call.
+
+        Args:
+            target_fn: Selected function definition used to shape the JSON.
+
+        Returns:
+            JsonStateMachine: Machine constrained to the function's
+            parameter schema.
+        """
         val_state: State
 
         if not target_fn.parameters:
@@ -102,6 +136,17 @@ class TwoStepJsonGenerator(BaseModel):
         return JsonStateMachine(current_state=current_state)
 
     def generate(self) -> dict[str, Any]:
+        """Generate the function name and then extract its parameters.
+
+        Returns:
+            dict[str, Any]: Dictionary containing the prompt, the chosen
+                function name, and its extracted parameters.
+
+        Raises:
+            GenerationJsonError: If the model selects a non-existent
+                function or if the parameters JSON is malformed.
+        """
+
         self.generator.machine = self.machine_for_name()
         name_prompt = self.prompt_for_name()
         selected_name = self.generator.generate(name_prompt, 15)
@@ -135,6 +180,16 @@ class TwoStepJsonGenerator(BaseModel):
 def process_single_prompt_optimized(
     user_prompt: str, functions_definition: list[FunctionDefinition],
         generator: ConstrainedGenerator) -> dict[str, Any]:
+    """Generate a structured function-call result for one user prompt.
+
+    Args:
+        user_prompt: Natural-language user request to process.
+        functions_definition: Available functions the model may choose from.
+        generator: Constrained generator used to produce the result.
+
+    Returns:
+        dict[str, Any]: Generated function-call payload.
+    """
 
     json_gen = TwoStepJsonGenerator(
         user_prompt=user_prompt,

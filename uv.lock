@@ -62,6 +62,12 @@ dev = [
     { name = "pytest" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "flake8" },
+    { name = "mypy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "flake8", marker = "extra == 'dev'" },
@@ -72,6 +78,12 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "flake8", specifier = ">=7.3.0" },
+    { name = "mypy", specifier = ">=1.20.0" },
+]
 
 [[package]]
 name = "certifi"
