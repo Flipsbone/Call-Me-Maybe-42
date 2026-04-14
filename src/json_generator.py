@@ -50,11 +50,22 @@ class TwoStepJsonGenerator(BaseModel):
         return JsonStateMachine(current_state=branch_state)
 
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
+        params_info = (", ".join(
+            [f"'{p_name}' ({p_model.type})"
+             for p_name, p_model in target_fn.parameters.items()]))
 
-        prompt = f"<|im_start|>system\nExtract params for {target_fn.name}.\n"
-        prompt += f"Desc: {target_fn.description}\n<|im_end|>\n"
-        prompt += (f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n"
-                   "<|im_start|>assistant\n")
+        prompt = (
+            "<|im_start|>system\n"
+            "Extract the specific parameters for the function"
+            f" '{target_fn.name}'.\n"
+            f"You must find these parameters: {params_info}\n"
+            "CRITICAL: Do NOT execute the command."
+            "Do NOT calculate or reverse anything."
+            "ONLY extract the exact literal values from the text.\n"
+            "<|im_end|>\n"
+            f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
         return prompt
 
     def machine_for_params(

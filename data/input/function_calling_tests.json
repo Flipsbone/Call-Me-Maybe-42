@@ -1,23 +1,35 @@
 [
   {
-    "prompt": "Le statut de l'utilisateur est true, est-il actif ?"
+    "prompt": "What is the sum of 2 and 3?"
   },
   {
-    "prompt": "Filtre les nombres pairs de la liste [1, 2, 3, 4, 5, 6]"
+    "prompt": "What is the sum of 265 and 345?"
   },
   {
-    "prompt": "Vérifie si l'utilisateur est actif sachant que la valeur est false."
+    "prompt": "Greet shrek"
   },
   {
-    "prompt": "Traite les données suivantes : ['pomme', 'banane', 'cerise'] en activant le tri (true)."
+    "prompt": "Greet john"
   },
   {
-    "prompt": "Filtre les nombres d'un tableau vide []"
+    "prompt": "Reverse the string 'hello'"
   },
   {
-    "prompt": "Process la liste de données avec le tri désactivé. Les données sont : [10.5, -3, 0]"
+    "prompt": "Reverse the string 'world'"
   },
   {
-    "prompt": "Applique le filtre sur [  ], avec beaucoup d'espaces."
+    "prompt": "What is the square root of 16?"
+  },
+  {
+    "prompt": "Calculate the square root of 144"
+  },
+  {
+    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
+  },
+  {
+    "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
+  },
+  {
+    "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
   }
 ]
