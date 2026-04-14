@@ -120,7 +120,7 @@ class TwoStepJsonGenerator(BaseModel):
         for i in reversed(range(len(params))):
             p_name, p_model = params[i]
 
-            if p_model.type == "number":
+            if p_model.type in ["number", "integer"]:
                 val_state = StateParseNumber(next_state=current_state)
             else:
                 val_state = StateParseString(next_state=current_state)
@@ -169,6 +169,11 @@ class TwoStepJsonGenerator(BaseModel):
         except json.JSONDecodeError:
             raise GenerationJsonError("LLM generated invalid JSON:"
                                       f"{params_str}")
+
+        for p_name, p_val in params_dict.items():
+            if p_name in target_fn.parameters:
+                if target_fn.parameters[p_name].type == "number":
+                    params_dict[p_name] = float(p_val)
 
         return {
             "prompt": self.user_prompt,
