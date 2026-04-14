@@ -3,7 +3,7 @@ import json
 import argparse
 from pathlib import Path
 from pydantic import BaseModel, ValidationError
-
+from typing import Any
 from src.functions_validator import FunctionDefinition
 
 
@@ -54,7 +54,8 @@ def setup_configuration() -> AppConfig:
                  f"\nDetails:\n{e}")
 
 
-def _load_json_data(file_path: Path, model_class: type[BaseModel]) -> list:
+def _load_json_data(
+        file_path: Path, model_class: type[BaseModel]) -> list[Any]:
     try:
         with file_path.open('r') as file:
             raw_data = json.load(file)
