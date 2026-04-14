@@ -28,6 +28,7 @@ def main() -> None:
 
     try:
         llm = Small_LLM_Model()
+        print(f"The LLM used is: {llm._model_name}")
         vocab = VocabIndex.from_model(llm)
     except RuntimeError as e:
         sys.exit(f"Error memory GPU/CPU during the loading : {e}")
