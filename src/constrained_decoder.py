@@ -72,9 +72,9 @@ class ConstrainedDecoder(BaseModel):
     def _update_state_machine(self, state: State, token_str: str) -> State:
         """Transition the state machine based on the generated token string."""
         current_state: State = state
-        overflow: str = token_str
+        remain_str: str = token_str
 
-        while overflow and not isinstance(current_state, StateTerminal):
-            current_state, overflow = current_state.transition(overflow)
+        while remain_str and not isinstance(current_state, StateTerminal):
+            current_state, remain_str = current_state.transition(remain_str)
 
         return current_state

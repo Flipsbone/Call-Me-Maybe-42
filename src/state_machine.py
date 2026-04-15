@@ -83,9 +83,10 @@ class StateExpectLiteral(State):
         """Advance the literal buffer and return any overflow text."""
         self.buffer += token_str
         if self.buffer.startswith(self.expected):
-            overflow = self.buffer[len(self.expected):]
+            remain_str = self.buffer[len(self.expected):]
             next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
+            return next_s, remain_str
+
         return self, ""
 
 
@@ -116,8 +117,8 @@ class StateBranch(State):
         self.buffer += token_str
         for choice, next_s in self.choices.items():
             if self.buffer.startswith(choice):
-                overflow = self.buffer[len(choice):]
-                return next_s, overflow
+                remain_str = self.buffer[len(choice):]
+                return next_s, remain_str
         return self, ""
 
 
@@ -160,17 +161,15 @@ class StateParseNumber(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Consume numeric text and advance once a delimiter is found."""
         self.buffer += token_str
         match = REGEX_PREFIX_NUMBER.match(self.buffer)
         if match:
-            num_part = match.group()
-            whitespace_len = len(self.buffer) - len(self.buffer.lstrip())
-            overflow = self.buffer[whitespace_len + len(num_part):]
-            if overflow and overflow[0] in ',}]\n':
+            matched_text = match.group()
+            remain_str = self.buffer[len(matched_text):]
+            if remain_str and remain_str[0] in ',}]\n':
                 next_s = (
                     self.next_state if self.next_state else StateTerminal())
-                return next_s, overflow
+                return next_s, remain_str
         return self, ""
 
 
@@ -251,12 +250,11 @@ class StateParseString(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Consume string text and advance once a full string is matched."""
         self.buffer += token_str
         match = REGEX_PREFIX_STRING.match(self.buffer)
         if match:
-            string_part = match.group()
-            overflow = self.buffer[len(string_part):]
+            matched_text = match.group()
+            remain_str = self.buffer[len(matched_text):]
             next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
+            return next_s, remain_str
         return self, ""
