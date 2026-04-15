@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from llm_sdk import Small_LLM_Model
 from src.vocabulary import VocabIndex
 from src.state_machine import (
-        JsonStateMachine,
+        State,
         StateTerminal,
         StateExpectLiteral
 )
@@ -21,7 +21,7 @@ class ConstrainedGenerator(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model
     vocab_index: VocabIndex
-    machine: JsonStateMachine
+    current_state: State
 
     def generate(self, prompt: str, max_tokens: int = 150) -> str:
         """Produce a completion respecting the current machine state.
@@ -42,12 +42,10 @@ class ConstrainedGenerator(BaseModel):
         token_count = 0
 
         while not self._should_stop(token_count, max_tokens):
-            current_state = self.machine.current_state
 
-            if isinstance(current_state, StateExpectLiteral):
-
+            if isinstance(self.current_state, StateExpectLiteral):
                 generated_text = self._add_literal(
-                    current_state, generated_text)
+                    self.current_state, generated_text)
                 input_ids = self.llm.encode(
                     prompt + generated_text)[0].tolist()
 
@@ -56,7 +54,7 @@ class ConstrainedGenerator(BaseModel):
                 if new_token is not None:
                     generated_text += new_token
                     input_ids.append(self._get_token_id(new_token))
-                    self.machine.step(new_token)
+                    self._step(new_token)
                     token_count += 1
 
         if token_count >= max_tokens:
@@ -66,7 +64,7 @@ class ConstrainedGenerator(BaseModel):
 
     def _should_stop(self, token_count: int, max_tokens: int) -> bool:
         """Return whether generation should stop."""
-        return (isinstance(self.machine.current_state, StateTerminal) or
+        return (isinstance(self.current_state, StateTerminal) or
                 token_count >= max_tokens)
 
     def _add_literal(
@@ -85,7 +83,7 @@ class ConstrainedGenerator(BaseModel):
         buffer_len = len(state.buffer)
         literal_to_add = expected[buffer_len:]
         generated_text += literal_to_add
-        self.machine.current_state = state.next_state or StateTerminal()
+        self.current_state = state.next_state or StateTerminal()
 
         return generated_text
 
@@ -103,7 +101,7 @@ class ConstrainedGenerator(BaseModel):
             ValueError: If no valid token is available or selection fails.
         """
         try:
-            valid_tokens = self.machine.get_valid_tokens(
+            valid_tokens = self.current_state.get_valid_tokens(
                 self.vocab_index.clean_vocab,
                 self.vocab_index.filter_vocab
             )
@@ -143,3 +141,10 @@ class ConstrainedGenerator(BaseModel):
     def _get_token_id(self, token_str: str) -> int:
         """Return the token id for a decoded token string."""
         return self.vocab_index.token_to_id.get(token_str, -1)
+
+    def _step(self, token_str: str) -> None:
+        """Advance the machine by consuming a token fragment."""
+        overflow = token_str
+        while overflow and not isinstance(self.current_state, StateTerminal):
+            self.current_state, overflow = (
+                self.current_state.transition(overflow))

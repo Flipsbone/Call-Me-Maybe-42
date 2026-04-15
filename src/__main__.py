@@ -2,7 +2,6 @@ import sys
 import json
 import time
 
-from pydantic import BaseModel, Field
 from llm_sdk import Small_LLM_Model
 from src.config import setup_configuration
 from src.functions_validator import FunctionCallResult
@@ -10,32 +9,25 @@ from src.vocabulary import VocabIndex
 from src.generator import ConstrainedGenerator
 from src.json_generator import (process_single_prompt_optimized,
                                 GenerationJsonError)
-from src.state_machine import JsonStateMachine, StateTerminal
+from src.state_machine import StateTerminal
 
 
-class TerminalColor(BaseModel):
+class Theme:
     """ANSI color codes used for terminal status messages."""
-
-    GREEN: str = Field(default="\033[92m", frozen=True)
-    RED: str = Field(default="\033[91m", frozen=True)
-    CYAN: str = Field(default="\033[96m", frozen=True)
-    RESET: str = Field(default="\033[0m", frozen=True)
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
 
 
 def main() -> None:
-    """Run the function-calling generation workflow.
-
-    The entry point loads configuration, initializes the model and
-    vocabulary, processes each test case, and writes the accumulated
-    results to disk.
-
-    Returns:
-        None: This function performs I/O and exits the process on fatal
-        errors.
-    """
+    """Run the function-calling generation workflow."""
     start_time = time.time()
-    theme = TerminalColor()
-    config = setup_configuration()
+
+    (output_path,
+     functions_definition,
+     function_calling_tests) = setup_configuration()
+
     print("Initializing the LLM model and vocabulary...")
 
     try:
@@ -47,71 +39,56 @@ def main() -> None:
     except Exception as e:
         sys.exit(f"CRITICAL ERROR: {e}")
 
-    initial_machine = JsonStateMachine(current_state=StateTerminal())
     generator = ConstrainedGenerator(
         llm=llm,
         vocab_index=vocab,
-        machine=initial_machine
+        current_state=StateTerminal()
     )
 
     results = []
     try:
-        for test_case in config.function_calling_tests:
-            print(f"{theme.CYAN}Processing: '{test_case.prompt}'"
-                  f"...{theme.RESET}")
+        for test_case in function_calling_tests:
+            print(f"{Theme.CYAN}Processing: '{test_case.prompt}'"
+                  f"...{Theme.RESET}")
             try:
                 result_dict = process_single_prompt_optimized(
                     test_case.prompt,
-                    config.functions_definition,
+                    functions_definition,
                     generator
                 )
                 validated_result = FunctionCallResult.model_validate(
                     result_dict)
                 results.append(validated_result.model_dump())
-                print(f"  {theme.GREEN}✓ Success:{theme.RESET}"
+                print(f" {Theme.GREEN}✓ Success:{Theme.RESET}"
                       f"{result_dict.get('name', 'Unknown')}")
 
             except ValueError as e:
-                print(f"  {theme.RED}✗ Generation error: {e}{theme.RESET}")
+                print(f"  {Theme.RED}✗ Generation error: {e}{Theme.RESET}")
                 continue
             except GenerationJsonError as e:
-                print(f"  {theme.RED}✗ JSON decode error: {e}{theme.RESET}")
+                print(f"  {Theme.RED}✗ JSON decode error: {e}{Theme.RESET}")
                 continue
             except Exception as e:
-                print(f"  {theme.RED}✗ Unexpected error: {e}{theme.RESET}")
+                print(f"  {Theme.RED}✗ Unexpected error: {e}{Theme.RESET}")
                 continue
 
             if results:
                 try:
-                    with config.output_path.open('w') as file_out:
+                    with output_path.open('w') as file_out:
                         json.dump(
                             results, file_out, indent=2, ensure_ascii=False)
                 except OSError as e:
                     sys.exit(f"  ✗ Error saving the JSON file: {e}")
             else:
                 print("\n No results were generated. File not saved.")
-        print(f"\n✓ All results successfully saved to {config.output_path}")
 
-    except KeyboardInterrupt:
-        print(f"\n{theme.RED}✗ User interrupted (Ctrl+C)."
-              f"Shutting down...{theme.RESET}")
-        print("Saving processed results...")
-
-        if results:
-            try:
-                with config.output_path.open('w') as file_out:
-                    json.dump(results, file_out, indent=2, ensure_ascii=False)
-            except OSError as e:
-                sys.exit(f"  ✗ Error saving the JSON file: {e}")
-        else:
-            print("\n No results were generated. File not saved.")
-        print(f"\n✓ All results successfully saved to {config.output_path}")
+        print(f"\n✓ All results successfully saved to {output_path}")
 
     finally:
         elapsed_time = time.time() - start_time
-        print(f"\n{theme.CYAN}Total execution time:"
-              f"{theme.GREEN}{elapsed_time:.2f}"
-              f"{theme.CYAN} seconds.{theme.RESET}")
+        print(f"\n{Theme.CYAN}Total execution time:"
+              f"{Theme.GREEN}{elapsed_time:.2f}"
+              f"{Theme.CYAN} seconds.{Theme.RESET}")
 
 
 if __name__ == "__main__":

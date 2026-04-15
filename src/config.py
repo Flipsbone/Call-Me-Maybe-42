@@ -13,34 +13,9 @@ class FunctionCallingTest(BaseModel):
     prompt: str
 
 
-class AppConfig(BaseModel):
-    """Validated application configuration loaded from CLI arguments.
+def setup_configuration() -> (tuple[Path, list[FunctionDefinition],
+                                    list[FunctionCallingTest]]):
 
-    Attributes:
-        output_path (Path): Destination path for the JSON results.
-        functions_definition (list[FunctionDefinition]): List of available
-            function signatures.
-        function_calling_tests (list[FunctionCallingTest]): List of test
-            prompts to process.
-    """
-
-    output_path: Path
-    functions_definition: list[FunctionDefinition]
-    function_calling_tests: list[FunctionCallingTest]
-
-
-def setup_configuration() -> AppConfig:
-    """Parse CLI arguments and load the global application configuration.
-
-    Returns:
-        AppConfig: Instance containing paths and validated input data.
-
-    Raises:
-        SystemExit: If an input file is missing or if the output
-            directory cannot be created.
-        ValidationError: If the JSON data structure does not match
-            the expected models.
-    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,
                         default=Path("data/input/functions_definition.json"))
@@ -66,15 +41,7 @@ def setup_configuration() -> AppConfig:
         sys.exit(f"Error: Could not create output dir. {args.output.parent}"
                  f"\nDetails: {e}")
 
-    try:
-        return AppConfig(
-            output_path=args.output,
-            functions_definition=functions_def,
-            function_calling_tests=calling_tests
-        )
-    except ValidationError as e:
-        sys.exit(f"CRITICAL ERROR: Invalid global configuration."
-                 f"\nDetails:\n{e}")
+    return args.output, functions_def, calling_tests
 
 
 def _load_json_data(

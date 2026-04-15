@@ -6,7 +6,6 @@ from src.generator import ConstrainedGenerator
 from src.functions_validator import FunctionDefinition
 from src.state_machine import (
     State,
-    JsonStateMachine,
     StateTerminal,
     StateExpectLiteral,
     StateBranch,
@@ -52,18 +51,17 @@ class TwoStepJsonGenerator(BaseModel):
 
         return prompt
 
-    def machine_for_name(self) -> JsonStateMachine:
+    def machine_for_name(self) -> State:
         """Create a state machine that accepts only valid function names."""
         if not self.functions_definition:
-            return JsonStateMachine(current_state=StateTerminal())
+            return StateTerminal()
 
         choices: dict[str, State] = {}
 
         for fn in self.functions_definition:
             choices[fn.name] = StateTerminal()
 
-        branch_state = StateBranch(choices=choices)
-        return JsonStateMachine(current_state=branch_state)
+        return StateBranch(choices=choices)
 
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
         """Build the prompt used to extract parameters for one function.
@@ -94,7 +92,7 @@ class TwoStepJsonGenerator(BaseModel):
         return prompt
 
     def machine_for_params(
-            self, target_fn: FunctionDefinition) -> JsonStateMachine:
+            self, target_fn: FunctionDefinition) -> State:
         """Create a state machine that emits JSON for one function call.
 
         Args:
@@ -107,9 +105,8 @@ class TwoStepJsonGenerator(BaseModel):
         val_state: State
 
         if not target_fn.parameters:
-            empty_state = StateExpectLiteral(
-                expected='{}', next_state=StateTerminal())
-            return JsonStateMachine(current_state=empty_state)
+            return (StateExpectLiteral(expected='{}',
+                                       next_state=StateTerminal()))
 
         tail_state = StateTerminal()
         current_state: State = StateExpectLiteral(
@@ -133,7 +130,7 @@ class TwoStepJsonGenerator(BaseModel):
             current_state = StateExpectLiteral(
                 expected=prefix, next_state=val_state)
 
-        return JsonStateMachine(current_state=current_state)
+        return current_state
 
     def generate(self) -> dict[str, Any]:
         """Generate the function name and then extract its parameters.
@@ -147,7 +144,7 @@ class TwoStepJsonGenerator(BaseModel):
                 function or if the parameters JSON is malformed.
         """
 
-        self.generator.machine = self.machine_for_name()
+        self.generator.current_state = self.machine_for_name()
         name_prompt = self.prompt_for_name()
         selected_name = self.generator.generate(name_prompt, 15)
 
@@ -160,7 +157,7 @@ class TwoStepJsonGenerator(BaseModel):
             raise GenerationJsonError(f"LLM generated an unknown function: "
                                       f"'{selected_name}'")
 
-        self.generator.machine = self.machine_for_params(target_fn)
+        self.generator.current_state = self.machine_for_params(target_fn)
         params_prompt = self.prompt_for_params(target_fn)
         params_str = self.generator.generate(params_prompt, 100)
 
