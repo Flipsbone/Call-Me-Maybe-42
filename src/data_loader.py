@@ -4,17 +4,12 @@ import argparse
 from pathlib import Path
 from pydantic import BaseModel, ValidationError
 from typing import Any
-from src.functions_validator import FunctionDefinition
+from src.functions_validator import FunctionDefinition, FunctionCallingTest
 
 
-class FunctionCallingTest(BaseModel):
-    """Single prompt used to validate function-calling generation."""
-
-    prompt: str
-
-
-def setup_configuration() -> (tuple[Path, list[FunctionDefinition],
-                                    list[FunctionCallingTest]]):
+def parse_arguments_and_load_data() -> (
+            tuple[Path, list[FunctionDefinition],
+                  list[FunctionCallingTest]]):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,

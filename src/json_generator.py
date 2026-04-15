@@ -2,7 +2,7 @@ import json
 from typing import Any
 from pydantic import BaseModel, ConfigDict
 
-from src.generator import ConstrainedGenerator
+from src.constrained_decoder import ConstrainedDecoder
 from src.functions_validator import FunctionDefinition
 from src.state_machine import (
     State,
@@ -26,13 +26,13 @@ class TwoStepJsonGenerator(BaseModel):
     Attributes:
         user_prompt (str): The user's natural language request.
         functions_definition (list[FunctionDefinition]): Available tools.
-        generator (ConstrainedGenerator): Constrained generation engine.
+        generator (ConstrainedDecoder): Constrained generation engine.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
     functions_definition: list[FunctionDefinition]
-    generator: ConstrainedGenerator
+    generator: ConstrainedDecoder
 
     def prompt_for_name(self) -> str:
         """Build the prompt used to select the target function name.
@@ -169,25 +169,3 @@ class TwoStepJsonGenerator(BaseModel):
             "name": selected_name,
             "parameters": params_dict
         }
-
-
-def process_single_prompt_optimized(
-    user_prompt: str, functions_definition: list[FunctionDefinition],
-        generator: ConstrainedGenerator) -> dict[str, Any]:
-    """Generate a structured function-call result for one user prompt.
-
-    Args:
-        user_prompt: Natural-language user request to process.
-        functions_definition: Available functions the model may choose from.
-        generator: Constrained generator used to produce the result.
-
-    Returns:
-        dict[str, Any]: Generated function-call payload.
-    """
-
-    json_gen = TwoStepJsonGenerator(
-        user_prompt=user_prompt,
-        functions_definition=functions_definition,
-        generator=generator
-    )
-    return json_gen.generate()

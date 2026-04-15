@@ -2,6 +2,12 @@ from pydantic import BaseModel
 from typing import Any
 
 
+class FunctionCallingTest(BaseModel):
+    """Single prompt used to validate function-calling generation."""
+
+    prompt: str
+
+
 class ParameterModel(BaseModel):
     """Schema for a single function parameter definition."""
 
