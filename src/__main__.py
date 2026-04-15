@@ -29,7 +29,7 @@ def init_ai() -> ConstrainedDecoder:
 def process_all_prompts(
         tests: list[FunctionCallingTest],
         functions_def: list[FunctionDefinition],
-        generator: ConstrainedDecoder) -> list[dict[str, Any]]:
+        assistant: ConstrainedDecoder) -> list[dict[str, Any]]:
 
     """Process all test prompts through the generator."""
     results: list[dict[str, Any]] = []
@@ -40,7 +40,7 @@ def process_all_prompts(
             json_gen = TwoStepJsonGenerator(
                 user_prompt=test_case.prompt,
                 functions_definition=functions_def,
-                generator=generator
+                assistant=assistant
             )
             result_dict = json_gen.generate()
 

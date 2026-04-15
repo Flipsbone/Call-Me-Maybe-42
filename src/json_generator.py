@@ -26,7 +26,7 @@ class TwoStepJsonGenerator(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
     functions_definition: list[FunctionDefinition]
-    generator: ConstrainedDecoder
+    assistant: ConstrainedDecoder
 
     def prompt_for_name(self) -> str:
         """Build the prompt used to select the target function name."""
@@ -99,35 +99,50 @@ class TwoStepJsonGenerator(BaseModel):
 
     def generate(self) -> dict[str, Any]:
         """Execute the two-step generation and validate the resulting data."""
-        name_state = self.machine_for_name()
-        selected_name = self.generator.generate(
-            self.prompt_for_name(), name_state, 15)
+        rules_for_name = self.machine_for_name()
+        text_prompt_for_name = self.prompt_for_name()
 
-        target_fn: FunctionDefinition | None = next(
-            (f for f in self.functions_definition if f.name == selected_name),
-            None
+        chosen_name = self.assistant.generate(
+            prompt=text_prompt_for_name,
+            state=rules_for_name,
+            max_tokens=15
+            )
+        found_function = None
+
+        for func in self.functions_definition:
+            if func.name == chosen_name:
+                found_function = func
+                break
+
+        if found_function is None:
+            raise GenerationJsonError(f"Unknown function: {chosen_name}")
+
+        rules_for_params = self.machine_for_params(found_function)
+        text_prompt_for_params = self.prompt_for_params(found_function)
+
+        generated_params_text = self.assistant.generate(
+            prompt=text_prompt_for_params,
+            state=rules_for_params,
+            max_tokens=100
         )
 
-        if target_fn is None:
-            raise GenerationJsonError(f"Unknown function: {selected_name}")
+        if generated_params_text.strip() == "":
+            final_parameters = {}
+        else:
+            try:
+                final_parameters = json.loads(generated_params_text)
+            except json.JSONDecodeError:
+                raise GenerationJsonError(
+                    f"Invalid JSON: {generated_params_text}")
 
-        params_state = self.machine_for_params(target_fn)
-        params_str = self.generator.generate(
-            self.prompt_for_params(target_fn), params_state, 100)
-
-        try:
-            params_dict: dict[str, Any] = (
-                json.loads(params_str) if params_str.strip() else {}
-            )
-        except json.JSONDecodeError:
-            raise GenerationJsonError(f"Invalid JSON: {params_str}")
-
-        for p_name, p_model in target_fn.parameters.items():
-            if p_name in params_dict and p_model.type == "number":
-                params_dict[p_name] = float(params_dict[p_name])
+        for param_name, param_details in found_function.parameters.items():
+            if param_name in final_parameters:
+                if param_details.type == "number":
+                    final_parameters[param_name] = (
+                        float(final_parameters[param_name]))
 
         return {
-            "prompt": self.user_prompt,
-            "name": selected_name,
-            "parameters": params_dict
-        }
+                "prompt": self.user_prompt,
+                "name": chosen_name,
+                "parameters": final_parameters
+            }
