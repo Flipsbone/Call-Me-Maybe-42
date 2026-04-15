@@ -133,29 +133,24 @@ class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
+            self, clean_vocab: dict[int, str],
+            vocab_filter: VocabFilter) -> set[int]:
         """Return token ids that keep the buffered text a valid number."""
-
         valid_ids: set[int] = set()
-
-        test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
-        test_prefix = REGEX_PREFIX_NUMBER.match
-        buf = self.buffer
-        expected_next = getattr(self.next_state, 'expected', '')
+        expected_next_text = getattr(self.next_state, 'expected', '')
 
         for token_id in vocab_filter.numeric_tokens:
-            test_str = buf + clean_vocab[token_id]
+            simulated_text = self.buffer + clean_vocab[token_id]
 
-            if test_fullmatch(test_str):
+            if REGEX_PARTIAL_NUMBER.fullmatch(simulated_text):
                 valid_ids.add(token_id)
             else:
-                match = test_prefix(test_str)
+                match = REGEX_PREFIX_NUMBER.match(simulated_text)
                 if match:
-                    overflow = test_str[match.end():]
-                    if not overflow:
-                        valid_ids.add(token_id)
-                    elif expected_next.startswith(overflow):
+                    matched_text = match.group()
+                    remain_str = simulated_text[len(matched_text):]
+                    if (not remain_str or
+                            expected_next_text.startswith(remain_str)):
                         valid_ids.add(token_id)
 
         return valid_ids
@@ -179,41 +174,42 @@ class StateParseString(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
+            self, clean_vocab: dict[int, str],
+            vocab_filter: VocabFilter) -> set[int]:
+
         """Return token ids that keep the buffered text a valid string."""
+        expected_next_text = getattr(self.next_state, 'expected', '')
+        match = REGEX_PREFIX_STRING.match(self.buffer)
 
-        expected_next = getattr(self.next_state, 'expected', '')
-        buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
-
-        if buffer_match:
+        if match:
+            matched_text = match.group()
             return self._handle_closed_string(
-                match_end=buffer_match.end(),
-                expected_next=expected_next,
+                matched_text=matched_text,
+                expected_next=expected_next_text,
                 clean_vocab=clean_vocab,
                 vocab_filter=vocab_filter
             )
 
         return self._handle_open_string(
-            expected_next=expected_next,
+            expected_next=expected_next_text,
             clean_vocab=clean_vocab,
             vocab_filter=vocab_filter
         )
 
     def _handle_closed_string(
-            self, match_end: int, expected_next: str,
-            clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Handle a string that is already closed and may expose overflow."""
+            self, matched_text: str, expected_next: str,
+            clean_vocab: dict[int, str],
+            vocab_filter: VocabFilter) -> set[int]:
+        """Handle a string that is already closed
+            and may expose remaining text."""
 
         valid_ids: set[int] = set()
-        overflow_len = len(self.buffer) - match_end
+        remain_str = self.buffer[len(matched_text):]
 
-        if overflow_len > 0 and not expected_next.startswith(
-                self.buffer[match_end:]):
+        if remain_str and not expected_next.startswith(remain_str):
             return valid_ids
 
-        remaining_expected = expected_next[overflow_len:]
+        remaining_expected = expected_next[len(remain_str):]
         if remaining_expected:
             valid_ids.update(vocab_filter.get_literal_matches(
                 remaining_expected, clean_vocab))
@@ -224,27 +220,23 @@ class StateParseString(State):
             self, expected_next: str, clean_vocab: dict[int, str],
             vocab_filter: VocabFilter) -> set[int]:
         """Handle a string that is still open and must remain valid JSON."""
-
         valid_ids: set[int] = set()
 
-        has_opening_quote = self.buffer.lstrip().startswith('"')
-        if has_opening_quote:
+        if self.buffer.lstrip().startswith('"'):
             valid_ids.update(vocab_filter.string_safe_tokens)
 
-        test_fullmatch = REGEX_PARTIAL_STRING.fullmatch
-        test_prefix = REGEX_PREFIX_STRING.match
-        buf = self.buffer
-
         for token_id in vocab_filter.string_unsafe_tokens:
-            test_str = buf + clean_vocab[token_id]
+            simulated_text = self.buffer + clean_vocab[token_id]
 
-            if test_fullmatch(test_str):
+            if REGEX_PARTIAL_STRING.fullmatch(simulated_text):
                 valid_ids.add(token_id)
             else:
-                match = test_prefix(test_str)
+                match = REGEX_PREFIX_STRING.match(simulated_text)
                 if match:
-                    overflow = test_str[match.end():]
-                    if not overflow or expected_next.startswith(overflow):
+                    matched_text = match.group()
+                    remain_str = simulated_text[len(matched_text):]
+
+                    if not remain_str or expected_next.startswith(remain_str):
                         valid_ids.add(token_id)
 
         return valid_ids
