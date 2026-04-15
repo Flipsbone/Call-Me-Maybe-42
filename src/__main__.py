@@ -13,21 +13,15 @@ from src.functions_validator import (
 from src.vocabulary import VocabIndex
 from src.constrained_decoder import ConstrainedDecoder
 from src.json_generator import TwoStepJsonGenerator, GenerationJsonError
-from src.state_machine import StateTerminal
 
 
 def init_ai() -> ConstrainedDecoder:
-    """Initialize the LLM, the vocabulary, and the base generator."""
-
+    """Initialize core AI components: LLM and Vocabulary Index."""
     print("Initializing the LLM model and vocabulary...")
     try:
         llm = Small_LLM_Model()
         vocab = VocabIndex.from_model(llm)
-        return ConstrainedDecoder(
-            llm=llm,
-            vocab_index=vocab,
-            current_state=StateTerminal()
-        )
+        return ConstrainedDecoder(llm=llm, vocab_index=vocab)
     except Exception as e:
         sys.exit(f"CRITICAL ERROR during initialization: {e}")
 
@@ -35,11 +29,9 @@ def init_ai() -> ConstrainedDecoder:
 def process_all_prompts(
         tests: list[FunctionCallingTest],
         functions_def: list[FunctionDefinition],
-        generator: ConstrainedDecoder
-) -> list[dict[str, Any]]:
-    """Process all test prompts through the generator
-       and return valid results."""
+        generator: ConstrainedDecoder) -> list[dict[str, Any]]:
 
+    """Process all test prompts through the generator."""
     results: list[dict[str, Any]] = []
 
     for test_case in tests:
@@ -71,7 +63,7 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
         return
 
     try:
-        with output_path.open('w', encoding='utf-8') as file_out:
+        with output_path.open('w') as file_out:
             json.dump(results, file_out, indent=2, ensure_ascii=False)
         print(f"\n✓ All results successfully saved to {output_path}")
     except OSError as e:
@@ -79,13 +71,15 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
-    start_time = time.time()
+    """Main execution loop for the function calling validator."""
+    start_time: float = time.time()
 
     output_path, functions_def, tests = parse_arguments_and_load_data()
 
-    generator = init_ai()
+    generator: ConstrainedDecoder = init_ai()
 
-    results = process_all_prompts(tests, functions_def, generator)
+    results: list[dict[str, Any]] = process_all_prompts(
+        tests, functions_def, generator)
 
     save_results(results, output_path)
 

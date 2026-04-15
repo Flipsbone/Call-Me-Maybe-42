@@ -6,72 +6,75 @@ from src.state_machine import State, StateTerminal, StateExpectLiteral
 
 
 class ConstrainedDecoder(BaseModel):
-    """Engine that forces the LLM to generate
-    text matching a specific state machine."""
+    """Engine that guides LLM generation using a provided state machine."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model
     vocab_index: VocabIndex
-    current_state: State
 
-    def generate(self, prompt: str, max_tokens: int = 150) -> str:
-        """Produce a completion by guiding the LLM token by token."""
-        input_ids = self.llm.encode(prompt)[0].tolist()
-        generated_text = ""
+    def generate(
+            self, prompt: str, state: State, max_tokens: int = 150) -> str:
+        """Produce a completion by following the rules of the given state."""
+        input_ids: list[int] = self.llm.encode(prompt)[0].tolist()
+        generated_text: str = ""
+        current_state: State = state
 
         for _ in range(max_tokens):
-
-            if isinstance(self.current_state, StateTerminal):
+            if isinstance(current_state, StateTerminal):
                 return generated_text
 
-            if isinstance(self.current_state, StateExpectLiteral):
-                literal_to_add = self.current_state.expected[
-                    len(self.current_state.buffer):]
+            if isinstance(current_state, StateExpectLiteral):
+                literal_to_add: str = current_state.expected[
+                    len(current_state.buffer):]
                 generated_text += literal_to_add
-                new_ids = self.llm.encode(literal_to_add)[0].tolist()
+                new_ids: list[int] = (
+                        self.llm.encode(literal_to_add)[0].tolist())
                 input_ids.extend(new_ids)
 
-                self.current_state = (
-                    self.current_state.next_state or StateTerminal())
-
+                current_state = (
+                    current_state.next_state or StateTerminal())
             else:
-                new_token = self._select_next_token(input_ids)
+                new_token: str = self._select_next_token(
+                    input_ids, current_state)
                 generated_text += new_token
                 input_ids.append(
                     self.vocab_index.token_to_id.get(new_token, -1))
-                self._update_state_machine(new_token)
+                current_state = self._update_state_machine(
+                    current_state, new_token)
 
-        raise ValueError("Generation error: Token limit exceeded.")
+        return generated_text
 
-    def _select_next_token(self, input_ids: list[int]) -> str:
-        """Get allowed tokens and let the LLM pick the best one."""
-        valid_tokens = self.current_state.get_valid_tokens(
+    def _select_next_token(self, input_ids: list[int], state: State) -> str:
+        """Query the LLM to pick the best token
+        allowed by the current state."""
+        valid_tokens: set[int] = state.get_valid_tokens(
             self.vocab_index.clean_vocab,
             self.vocab_index.filter_vocab
         )
 
         if not valid_tokens:
             raise ValueError(
-                "Generation blocked: No valid tokens available to continue.")
+                "No valid tokens available to continue generation.")
 
         if len(valid_tokens) == 1:
-            best_token_id = next(iter(valid_tokens))
-
+            best_token_id: int = next(iter(valid_tokens))
         else:
             logits = np.array(
-                self.llm.get_logits_from_input_ids(
-                    input_ids), dtype=np.float32)
-
+                self.llm.get_logits_from_input_ids(input_ids),
+                dtype=np.float32
+            )
             valid_ids = np.array(list(valid_tokens), dtype=np.int32)
             scores = logits[valid_ids]
             best_token_id = int(valid_ids[np.argmax(scores)])
 
         return self.vocab_index.clean_vocab[best_token_id]
 
-    def _update_state_machine(self, token_str: str) -> None:
-        """Feed the generated token into
-        the machine to move to the next state."""
-        overflow = token_str
-        while overflow and not isinstance(self.current_state, StateTerminal):
-            self.current_state, overflow = (
-                self.current_state.transition(overflow))
+    def _update_state_machine(self, state: State, token_str: str) -> State:
+        """Transition the state machine based on the generated token string."""
+        current_state: State = state
+        overflow: str = token_str
+
+        while overflow and not isinstance(current_state, StateTerminal):
+            current_state, overflow = current_state.transition(overflow)
+
+        return current_state

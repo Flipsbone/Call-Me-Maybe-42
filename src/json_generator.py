@@ -21,13 +21,7 @@ class GenerationJsonError(Exception):
 
 
 class TwoStepJsonGenerator(BaseModel):
-    """Generator for function calls in two constrained steps.
-
-    Attributes:
-        user_prompt (str): The user's natural language request.
-        functions_definition (list[FunctionDefinition]): Available tools.
-        generator (ConstrainedDecoder): Constrained generation engine.
-    """
+    """Generator for function calls in two constrained steps."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
@@ -35,11 +29,7 @@ class TwoStepJsonGenerator(BaseModel):
     generator: ConstrainedDecoder
 
     def prompt_for_name(self) -> str:
-        """Build the prompt used to select the target function name.
-
-        Returns:
-            str: Chat-style prompt describing the available functions.
-        """
+        """Build the prompt used to select the target function name."""
         prompt = ("<|im_start|>system\nChoose the exact function name."
                   "\nFunctions:\n")
 
@@ -56,23 +46,13 @@ class TwoStepJsonGenerator(BaseModel):
         if not self.functions_definition:
             return StateTerminal()
 
-        choices: dict[str, State] = {}
-
-        for fn in self.functions_definition:
-            choices[fn.name] = StateTerminal()
-
+        choices: dict[str, State] = {
+            fn.name: StateTerminal() for fn in self.functions_definition
+        }
         return StateBranch(choices=choices)
 
     def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
-        """Build the prompt used to extract parameters for one function.
-
-        Args:
-            target_fn: Selected function definition whose parameters should
-                be extracted.
-
-        Returns:
-            str: Chat-style prompt focused on parameter extraction.
-        """
+        """Build the prompt used to extract parameters for one function."""
         params_info = (", ".join(
             [f"'{p_name}' ({p_model.type})"
              for p_name, p_model in target_fn.parameters.items()]))
@@ -91,33 +71,26 @@ class TwoStepJsonGenerator(BaseModel):
         )
         return prompt
 
-    def machine_for_params(
-            self, target_fn: FunctionDefinition) -> State:
-
-        val_state: State
-
+    def machine_for_params(self, target_fn: FunctionDefinition) -> State:
+        """Build a state machine enforcing the JSON schema for parameters."""
         if not target_fn.parameters:
             return (StateExpectLiteral(expected='{}',
                                        next_state=StateTerminal()))
 
-        tail_state = StateTerminal()
         current_state: State = StateExpectLiteral(
-            expected='\n}', next_state=tail_state)
+            expected='\n}', next_state=StateTerminal())
 
         params = list(target_fn.parameters.items())
 
         for i in reversed(range(len(params))):
             p_name, p_model = params[i]
-
-            if p_model.type in ["number", "integer"]:
-                val_state = StateParseNumber(next_state=current_state)
-            else:
-                val_state = StateParseString(next_state=current_state)
-
-            is_first = (i == 0)
-
+            val_state: State = (
+                StateParseNumber(next_state=current_state)
+                if p_model.type in ["number", "integer"]
+                else StateParseString(next_state=current_state)
+            )
             prefix = (
-                f'{{\n  "{p_name}": ' if is_first else f',\n  "{p_name}": ')
+                f'{{\n  "{p_name}": ' if i == 0 else f',\n  "{p_name}": ')
 
             current_state = StateExpectLiteral(
                 expected=prefix, next_state=val_state)
@@ -125,44 +98,33 @@ class TwoStepJsonGenerator(BaseModel):
         return current_state
 
     def generate(self) -> dict[str, Any]:
-        """Generate the function name and then extract its parameters.
+        """Execute the two-step generation and validate the resulting data."""
+        name_state = self.machine_for_name()
+        selected_name = self.generator.generate(
+            self.prompt_for_name(), name_state, 15)
 
-        Returns:
-            dict[str, Any]: Dictionary containing the prompt, the chosen
-                function name, and its extracted parameters.
-
-        Raises:
-            GenerationJsonError: If the model selects a non-existent
-                function or if the parameters JSON is malformed.
-        """
-
-        self.generator.current_state = self.machine_for_name()
-        name_prompt = self.prompt_for_name()
-        selected_name = self.generator.generate(name_prompt, 15)
-
-        target_fn = None
-        for function in self.functions_definition:
-            if function.name == selected_name:
-                target_fn = function
+        target_fn: FunctionDefinition | None = next(
+            (f for f in self.functions_definition if f.name == selected_name),
+            None
+        )
 
         if target_fn is None:
-            raise GenerationJsonError(f"LLM generated an unknown function: "
-                                      f"'{selected_name}'")
+            raise GenerationJsonError(f"Unknown function: {selected_name}")
 
-        self.generator.current_state = self.machine_for_params(target_fn)
-        params_prompt = self.prompt_for_params(target_fn)
-        params_str = self.generator.generate(params_prompt, 100)
+        params_state = self.machine_for_params(target_fn)
+        params_str = self.generator.generate(
+            self.prompt_for_params(target_fn), params_state, 100)
 
         try:
-            params_dict = json.loads(params_str) if params_str.strip() else {}
+            params_dict: dict[str, Any] = (
+                json.loads(params_str) if params_str.strip() else {}
+            )
         except json.JSONDecodeError:
-            raise GenerationJsonError("LLM generated invalid JSON:"
-                                      f"{params_str}")
+            raise GenerationJsonError(f"Invalid JSON: {params_str}")
 
-        for p_name, p_val in params_dict.items():
-            if p_name in target_fn.parameters:
-                if target_fn.parameters[p_name].type == "number":
-                    params_dict[p_name] = float(p_val)
+        for p_name, p_model in target_fn.parameters.items():
+            if p_name in params_dict and p_model.type == "number":
+                params_dict[p_name] = float(params_dict[p_name])
 
         return {
             "prompt": self.user_prompt,
