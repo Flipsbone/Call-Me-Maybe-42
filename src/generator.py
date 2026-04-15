@@ -10,13 +10,6 @@ from src.state_machine import (
 
 
 class ConstrainedGenerator(BaseModel):
-    """Text generator applying constraints via a state machine.
-
-    Attributes:
-        llm (Small_LLM_Model): Instance of the language model used.
-        vocab_index (VocabIndex): Vocabulary index and associated filters.
-        machine (JsonStateMachine): State machine guiding generation.
-    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model

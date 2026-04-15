@@ -260,25 +260,3 @@ class StateParseString(State):
             next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, overflow
         return self, ""
-
-
-class JsonStateMachine(BaseModel):
-    """Wrapper around the current constrained-decoding state."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    current_state: State
-
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Delegate valid-token discovery to the active state."""
-
-        return self.current_state.get_valid_tokens(clean_vocab, vocab_filter)
-
-    def step(self, token_str: str) -> None:
-        """Advance the machine by consuming a token fragment."""
-        overflow = token_str
-        state = self.current_state
-        while overflow and not isinstance(state, StateTerminal):
-            state, overflow = state.transition(overflow)
-            self.current_state = state

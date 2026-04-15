@@ -93,15 +93,7 @@ class TwoStepJsonGenerator(BaseModel):
 
     def machine_for_params(
             self, target_fn: FunctionDefinition) -> State:
-        """Create a state machine that emits JSON for one function call.
 
-        Args:
-            target_fn: Selected function definition used to shape the JSON.
-
-        Returns:
-            JsonStateMachine: Machine constrained to the function's
-            parameter schema.
-        """
         val_state: State
 
         if not target_fn.parameters:
