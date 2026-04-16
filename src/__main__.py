@@ -16,7 +16,6 @@ from src.json_generator import TwoStepJsonGenerator, GenerationJsonError
 
 
 def init_ai() -> ConstrainedDecoder:
-    """Initialize core AI components: LLM and Vocabulary Index."""
     print("Initializing the LLM model and vocabulary...")
     try:
         llm = Small_LLM_Model()
@@ -31,7 +30,6 @@ def process_all_prompts(
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> list[dict[str, Any]]:
 
-    """Process all test prompts through the generator."""
     results: list[dict[str, Any]] = []
 
     for test_case in tests:
@@ -57,7 +55,6 @@ def process_all_prompts(
 
 
 def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
-    """Save the generated valid results to the output JSON file."""
     if not results:
         print("\nNo results generated. File not saved.")
         return
@@ -71,18 +68,12 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
-    """Main execution loop for the function calling validator."""
     start_time: float = time.time()
-
     output_path, functions_def, tests = parse_arguments_and_load_data()
-
     assistant: ConstrainedDecoder = init_ai()
-
     results: list[dict[str, Any]] = process_all_prompts(
         tests, functions_def, assistant)
-
     save_results(results, output_path)
-
     print(f"\nTotal execution time: {time.time() - start_time:.2f} seconds.")
 
 

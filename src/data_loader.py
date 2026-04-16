@@ -63,12 +63,12 @@ def _load_json_data(
 
         return [model_class.model_validate(item) for item in raw_data]
 
-    except FileNotFoundError:
-        sys.exit(f"Error: File '{file_path}' not found.")
-    except PermissionError:
-        sys.exit(f"Error: Insufficient permissions to read '{file_path}'.")
+    except (FileNotFoundError, PermissionError):
+        sys.exit(f"Error accessing file '{file_path}'.")
     except json.JSONDecodeError as e:
         sys.exit(f"Error: '{file_path}' is not valid JSON. {e.msg}")
     except ValidationError as e:
         sys.exit(f"Error: Data validation failed for '{file_path}'."
                  f"\nDetails:\n{e}")
+    except Exception as e:
+        sys.exit(f"Unexpected error with '{file_path}': {e}")
