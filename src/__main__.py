@@ -76,10 +76,10 @@ def main() -> None:
 
     output_path, functions_def, tests = parse_arguments_and_load_data()
 
-    generator: ConstrainedDecoder = init_ai()
+    assistant: ConstrainedDecoder = init_ai()
 
     results: list[dict[str, Any]] = process_all_prompts(
-        tests, functions_def, generator)
+        tests, functions_def, assistant)
 
     save_results(results, output_path)
 
