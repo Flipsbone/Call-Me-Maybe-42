@@ -19,6 +19,7 @@ def init_ai() -> ConstrainedDecoder:
     print("Initializing the LLM model and vocabulary...")
     try:
         llm = Small_LLM_Model()
+        print(f"The LLM used is: {llm._model_name}")
         vocab = VocabIndex.from_model(llm)
         return ConstrainedDecoder(llm=llm, vocab_index=vocab)
     except Exception as e:
@@ -26,17 +27,17 @@ def init_ai() -> ConstrainedDecoder:
 
 
 def process_all_prompts(
-        tests: list[FunctionCallingTest],
+        calling_tests: list[FunctionCallingTest],
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
 
-    for test_case in tests:
-        print(f"Processing: '{test_case.prompt}'...")
+    for user_prompt in calling_tests:
+        print(f"Processing: '{user_prompt.prompt}'...")
         try:
             json_gen = TwoStepJsonGenerator(
-                user_prompt=test_case.prompt,
+                user_prompt=user_prompt.prompt,
                 functions_definition=functions_def,
                 assistant=assistant
             )
@@ -44,7 +45,8 @@ def process_all_prompts(
 
             validated_result = FunctionCallResult.model_validate(result_dict)
             results.append(validated_result.model_dump())
-            print(f"  ✓ Success: {result_dict.get('name')}")
+            print(f"  ✓ Success: {result_dict.get('name')} "
+                  f"{result_dict.get('parameters')}")
 
         except (ValueError, GenerationJsonError) as e:
             print(f"  ✗ Generation error: {e}")

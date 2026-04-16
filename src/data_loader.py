@@ -67,8 +67,7 @@ def _load_json_data(
         sys.exit(f"Error accessing file '{file_path}'.")
     except json.JSONDecodeError as e:
         sys.exit(f"Error: '{file_path}' is not valid JSON. {e.msg}")
-    except ValidationError as e:
-        sys.exit(f"Error: Data validation failed for '{file_path}'."
-                 f"\nDetails:\n{e}")
+    except ValidationError:
+        sys.exit("Error: Data validation failed.")
     except Exception as e:
         sys.exit(f"Unexpected error with '{file_path}': {e}")

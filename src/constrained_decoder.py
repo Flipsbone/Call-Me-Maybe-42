@@ -27,6 +27,7 @@ class ConstrainedDecoder(BaseModel):
                 literal_to_add: str = current_state.expected[
                     len(current_state.buffer):]
                 generated_text += literal_to_add
+
                 new_ids: list[int] = (
                         self.llm.encode(literal_to_add)[0].tolist())
                 input_ids.extend(new_ids)
@@ -36,11 +37,13 @@ class ConstrainedDecoder(BaseModel):
             else:
                 new_token: str = self._select_next_token(
                     input_ids, current_state)
-                generated_text += new_token
+                current_state, unconsumed_str = self._update_state_machine(
+                    current_state, new_token)
+                consumed_len = len(new_token) - len(unconsumed_str)
+                generated_text += new_token[:consumed_len]
+
                 input_ids.append(
                     self.vocab_index.token_to_id.get(new_token, -1))
-                current_state = self._update_state_machine(
-                    current_state, new_token)
 
         return generated_text
 
@@ -69,7 +72,8 @@ class ConstrainedDecoder(BaseModel):
 
         return self.vocab_index.clean_vocab[best_token_id]
 
-    def _update_state_machine(self, state: State, token_str: str) -> State:
+    def _update_state_machine(
+            self, state: State, token_str: str) -> tuple[State, str]:
         """Transition the state machine based on the generated token string."""
         current_state: State = state
         remain_str: str = token_str
@@ -77,4 +81,4 @@ class ConstrainedDecoder(BaseModel):
         while remain_str and not isinstance(current_state, StateTerminal):
             current_state, remain_str = current_state.transition(remain_str)
 
-        return current_state
+        return current_state, remain_str

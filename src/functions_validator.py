@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any
 
 
@@ -17,7 +17,7 @@ class ParameterModel(BaseModel):
 class FunctionDefinition(BaseModel):
     """Schema describing a callable target and its signature."""
 
-    name: str
+    name: str = Field(min_length=1)
     description: str
     parameters: dict[str, ParameterModel]
     returns: ParameterModel
