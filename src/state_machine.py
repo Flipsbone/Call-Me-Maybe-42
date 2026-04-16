@@ -69,15 +69,7 @@ class StateExpectLiteral(State):
             self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
             ) -> set[int]:
         """Return tokens that can continue or complete the expected text."""
-
-        if not self.expected.startswith(self.buffer):
-            return set()
-
-        remainder = self.expected[len(self.buffer):]
-        if not remainder:
-            return set()
-
-        return vocab_filter.get_literal_matches(remainder, clean_vocab)
+        return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
         """Advance the literal buffer and return any overflow text."""
