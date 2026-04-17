@@ -152,6 +152,12 @@ class TwoStepJsonGenerator(BaseModel):
             target_fn: FunctionDefinition) -> None:
         for param_name, param_details in target_fn.parameters.items():
             if param_name in parameters:
-                if param_details.type == "number":
-                    parameters[param_name] = float(
-                        parameters[param_name])
+                val = parameters[param_name]
+
+                try:
+                    if param_details.type == "number":
+                        parameters[param_name] = float(val)
+                    elif param_details.type == "integer":
+                        parameters[param_name] = int(float(val))
+                except (ValueError, TypeError):
+                    pass

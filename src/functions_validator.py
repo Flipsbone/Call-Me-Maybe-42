@@ -11,7 +11,7 @@ class FunctionCallingTest(BaseModel):
 class ParameterModel(BaseModel):
     """Schema for a single function parameter definition."""
 
-    type: str | None = None
+    type: str
 
 
 class FunctionDefinition(BaseModel):

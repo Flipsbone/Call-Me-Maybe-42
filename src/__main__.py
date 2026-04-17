@@ -19,7 +19,7 @@ def init_ai() -> ConstrainedDecoder:
     print("Initializing the LLM model and vocabulary...")
     try:
         llm = Small_LLM_Model()
-        print(f"The LLM used is: {llm._model_name}")
+        print("Qwen/Qwen3-0.6B model loaded successfully.")
         vocab = VocabIndex.from_model(llm)
         return ConstrainedDecoder(llm=llm, vocab_index=vocab)
     except Exception as e:

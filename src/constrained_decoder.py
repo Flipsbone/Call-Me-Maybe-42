@@ -35,21 +35,21 @@ class ConstrainedDecoder(BaseModel):
                 current_state = (
                     current_state.next_state or StateTerminal())
             else:
-                new_token: str = self._select_next_token(
+                token_id, new_token = self._select_next_token(
                     input_ids, current_state)
+
                 current_state, unconsumed_str = self._update_state_machine(
                     current_state, new_token)
+
                 consumed_len = len(new_token) - len(unconsumed_str)
                 generated_text += new_token[:consumed_len]
 
-                input_ids.append(
-                    self.vocab_index.token_to_id.get(new_token, -1))
+                input_ids.append(token_id)
 
         return generated_text
 
-    def _select_next_token(self, input_ids: list[int], state: State) -> str:
-        """Query the LLM to pick the best token
-        allowed by the current state."""
+    def _select_next_token(
+            self, input_ids: list[int], state: State) -> tuple[int, str]:
         valid_tokens: set[int] = state.get_valid_tokens(
             self.vocab_index.clean_vocab,
             self.vocab_index.filter_vocab
@@ -70,7 +70,7 @@ class ConstrainedDecoder(BaseModel):
             scores = logits[valid_ids]
             best_token_id = int(valid_ids[np.argmax(scores)])
 
-        return self.vocab_index.clean_vocab[best_token_id]
+        return best_token_id, self.vocab_index.clean_vocab[best_token_id]
 
     def _update_state_machine(
             self, state: State, token_str: str) -> tuple[State, str]:

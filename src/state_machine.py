@@ -1,35 +1,20 @@
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
-from src.vocabulary import VocabFilter
+from src.vocabulary import StrictVocabFilter
 
 WS = r'[ \n\r\t]*'
 
 
 class JSONValidator:
-    REGEX_PARTIAL_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*$')
-    REGEX_PREFIX_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*"')
     REGEX_PARTIAL_NUMBER = re.compile(
         fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
     REGEX_PREFIX_NUMBER = re.compile(
         fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?')
 
     @staticmethod
-    def is_partial_string(text: str) -> bool:
-        return bool(JSONValidator.REGEX_PARTIAL_STRING.fullmatch(text))
-
-    @staticmethod
     def is_partial_number(text: str) -> bool:
         return bool(JSONValidator.REGEX_PARTIAL_NUMBER.fullmatch(text))
-
-    @staticmethod
-    def extract_complete_string(text: str) -> tuple[str, str]:
-        match = JSONValidator.REGEX_PREFIX_STRING.match(text)
-        if match:
-            matched_text = match.group()
-            remain_str = text[len(matched_text):]
-            return matched_text, remain_str
-        return "", text
 
     @staticmethod
     def extract_complete_number(text: str) -> tuple[str, str]:
@@ -47,7 +32,7 @@ class State(BaseModel, ABC):
 
     @abstractmethod
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            self, clean_vocab: dict[int, str], vocab_filter: StrictVocabFilter
             ) -> set[int]:
         pass
 
@@ -57,10 +42,9 @@ class State(BaseModel, ABC):
 
 
 class StateTerminal(State):
-
     def get_valid_tokens(
             self, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
+            vocab_filter: StrictVocabFilter) -> set[int]:
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -72,7 +56,7 @@ class StateExpectLiteral(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            self, clean_vocab: dict[int, str], vocab_filter: StrictVocabFilter
             ) -> set[int]:
         return set()
 
@@ -82,7 +66,6 @@ class StateExpectLiteral(State):
             remain_str = self.buffer[len(self.expected):]
             next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, remain_str
-
         return self, ""
 
 
@@ -90,7 +73,7 @@ class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
+            self, clean_vocab: dict[int, str], vocab_filter: StrictVocabFilter
             ) -> set[int]:
         valid_ids: set[int] = set()
 
@@ -101,7 +84,6 @@ class StateBranch(State):
                     valid_ids.update(
                         vocab_filter.get_literal_matches(
                             remainder, clean_vocab))
-
         return valid_ids
 
     def transition(self, token_str: str) -> tuple[State, str]:
@@ -118,7 +100,7 @@ class StateParseNumber(State):
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
+            vocab_filter: StrictVocabFilter) -> set[int]:
         valid_ids: set[int] = set()
         expected_next_text = getattr(self.next_state, 'expected', '')
 
@@ -135,7 +117,6 @@ class StateParseNumber(State):
                         not remain_str or
                         expected_next_text.startswith(remain_str)):
                     valid_ids.add(token_id)
-
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
@@ -144,86 +125,58 @@ class StateParseNumber(State):
             self.buffer)
 
         if matched_text and remain_str and remain_str[0] in ',}]\n':
-            next_s = (
-                self.next_state if self.next_state else StateTerminal())
+            next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, remain_str
-
         return self, ""
 
 
 class StateParseString(State):
     next_state: State | None = Field(default=None)
+    has_opened: bool = Field(default=False)
 
     def get_valid_tokens(
             self, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
-        expected_next_text = getattr(self.next_state, 'expected', '')
-
-        matched_text, remain_str = JSONValidator.extract_complete_string(
-            self.buffer)
-
-        if matched_text:
-            return self._handle_closed_string(
-                matched_text=matched_text,
-                expected_next=expected_next_text,
-                clean_vocab=clean_vocab,
-                vocab_filter=vocab_filter
-            )
-
-        return self._handle_open_string(
-            expected_next=expected_next_text,
-            clean_vocab=clean_vocab,
-            vocab_filter=vocab_filter
-        )
-
-    def _handle_closed_string(
-            self, matched_text: str, expected_next: str,
-            clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
+            vocab_filter: StrictVocabFilter) -> set[int]:
 
         valid_ids: set[int] = set()
-        remain_str = self.buffer[len(matched_text):]
 
-        if remain_str and not expected_next.startswith(remain_str):
+        if not self.has_opened:
+            valid_ids.update(vocab_filter.exact_quote_tokens)
             return valid_ids
 
-        remaining_expected = expected_next[len(remain_str):]
-        if remaining_expected:
-            valid_ids.update(vocab_filter.get_literal_matches(
-                remaining_expected, clean_vocab))
-
-        return valid_ids
-
-    def _handle_open_string(
-            self, expected_next: str, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
-        valid_ids: set[int] = set()
-
-        if self.buffer.lstrip().startswith('"'):
-            valid_ids.update(vocab_filter.string_safe_tokens)
-
-        for token_id in vocab_filter.string_unsafe_tokens:
-            simulated_text = self.buffer + clean_vocab[token_id]
-
-            if JSONValidator.is_partial_string(simulated_text):
-                valid_ids.add(token_id)
-            else:
-                matched_text, remain_str = (
-                    JSONValidator.extract_complete_string(simulated_text))
-                if matched_text and (
-                        not remain_str or
-                        expected_next.startswith(remain_str)):
-                    valid_ids.add(token_id)
+        valid_ids.update(vocab_filter.string_content_tokens)
+        valid_ids.update(vocab_filter.string_closer_tokens)
 
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        self.buffer += token_str
-        matched_text, remain_str = JSONValidator.extract_complete_string(
-            self.buffer)
+        if not self.has_opened:
+            if '"' in token_str:
+                self.has_opened = True
+                quote_idx = token_str.find('"')
+                remain_str = token_str[quote_idx + 1:]
+                return self, remain_str
+            return self, ""
 
-        if matched_text:
+        idx = 0
+        while True:
+            quote_idx = token_str.find('"', idx)
+            if quote_idx == -1:
+                break
+
+            is_escaped = False
+            if quote_idx > 0 and token_str[quote_idx - 1] == '\\':
+                is_escaped = True
+            elif quote_idx == 0 and self.buffer.endswith('\\'):
+                is_escaped = True
+
+            if is_escaped:
+                idx = quote_idx + 1
+                continue
+
+            remain_str = token_str[quote_idx + 1:]
             next_s = self.next_state if self.next_state else StateTerminal()
             return next_s, remain_str
 
+        self.buffer += token_str
         return self, ""
