@@ -14,7 +14,21 @@ class ConstrainedDecoder(BaseModel):
 
     def generate(
             self, prompt: str, state: State, max_tokens: int = 150) -> str:
-        """Produce a completion by following the rules of the given state."""
+        """Produce a completion by following the rules of the given state.
+
+        Args:
+            Prompt: Initial text to prime the generation.
+            State: Node state that defines valid token sequences.
+            Max_tokens: Maximum number of tokens to generate.
+
+        Returns:
+            Generated text that adheres to the constraints
+            of the state machine.
+
+        Raises:
+            ValueError: If the state machine provides
+            no valid tokens to continue.
+        """
         input_ids: list[int] = self.llm.encode(prompt)[0].tolist()
         generated_text: str = ""
         current_state: State = state
@@ -84,7 +98,15 @@ class ConstrainedDecoder(BaseModel):
 
     def _update_state_machine(
             self, state: State, new_token: str) -> tuple[State, str]:
-        """Transition the state machine based on the generated token string."""
+        """Transition the state machine based on the generated token string.
+        Args:
+            state: Current state before consuming the new token.
+            new_token: The raw string of the newly generated token.
+
+        Returns:
+            tuple[State, str]: The new state after consuming the token and any
+            remaining string that was not consumed in the transition.
+            """
         current_state: State = state
         remain_str: str = new_token
 

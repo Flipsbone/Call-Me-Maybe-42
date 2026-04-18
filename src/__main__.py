@@ -97,11 +97,7 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
-    """Run the end-to-end function-calling evaluation pipeline.
 
-    This entrypoint coordinates argument parsing, model initialization,
-    prompt processing, and output persistence.
-    """
     start_time: float = time.time()
     output_path, functions_def, tests = parse_arguments_and_load_data()
     assistant: ConstrainedDecoder = init_ai()

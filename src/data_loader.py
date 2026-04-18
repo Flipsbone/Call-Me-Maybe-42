@@ -12,11 +12,6 @@ def parse_arguments_and_load_data() -> (
                   list[FunctionCallingTest]]):
     """Parse CLI arguments and load validated input datasets.
 
-    This function reads command-line paths for the function definitions,
-    prompt dataset, and output target. It validates input file existence,
-    parses JSON payloads into Pydantic models, and ensures the output
-    directory exists.
-
     Returns:
         tuple[Path, list[FunctionDefinition], list[FunctionCallingTest]]:
             Output file path, validated function schema definitions, and

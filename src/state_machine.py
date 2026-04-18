@@ -212,12 +212,10 @@ class StateParseNumber(State):
             token_str = vocab_index.clean_vocab[token_id]
             simulated_text = self.buffer + token_str
 
-            # If it's a valid incomplete number, accept it
             if JSONValidator.is_partial_number(simulated_text):
                 valid_ids.add(token_id)
                 continue
 
-            # Check if we can complete the number
             matched_text, remain_str = JSONValidator.extract_complete_number(
                 simulated_text)
 
@@ -241,7 +239,6 @@ class StateParseNumber(State):
         matched_text, remain_str = JSONValidator.extract_complete_number(
             self.buffer)
 
-        # Complete number detected and valid separator follows
         if matched_text and remain_str and remain_str[0] in ',}]\n':
             next_state = self.next_state or StateTerminal()
             return next_state, remain_str
