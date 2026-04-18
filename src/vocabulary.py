@@ -120,12 +120,9 @@ class VocabIndex(BaseModel):
         Args:
             remainder: Remaining literal text expected by the state machine.
 
-        Returns token IDs where either:
-        - The token starts with the remainder (prefix match)
-        - The remainder starts with the token (suffix match)
-
         Returns:
-            set[int]: Token IDs that can satisfy or extend the remainder text.
+            set[int]: Token IDs where either the token starts with the
+            remainder or the remainder starts with the token.
 
         Results are cached for performance.
         """

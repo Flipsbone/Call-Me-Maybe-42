@@ -82,7 +82,7 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
         output_path: Destination file where output JSON is written.
 
     Returns:
-        None: Returns early when no results are available.
+        None
 
     Raises:
         SystemExit: If writing the output file fails.
