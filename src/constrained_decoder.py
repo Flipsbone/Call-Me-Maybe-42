@@ -50,6 +50,18 @@ class ConstrainedDecoder(BaseModel):
 
     def _select_next_token(
             self, input_ids: list[int], state: State) -> tuple[int, str]:
+        """Select the best next token among those allowed by the state.
+
+        Args:
+            input_ids: Token IDs already present in the model context.
+            state: Current finite-state-machine node driving constraints.
+
+        Returns:
+            tuple[int, str]: The chosen token ID and its decoded string.
+
+        Raises:
+            ValueError: If the current state exposes no valid next tokens.
+        """
 
         valid_tokens: set[int] = state.get_valid_tokens(self.vocab_index)
 

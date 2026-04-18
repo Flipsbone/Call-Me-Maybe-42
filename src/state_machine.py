@@ -16,12 +16,26 @@ class JSONValidator:
 
     @staticmethod
     def is_partial_number(text: str) -> bool:
-        """Check if text is an incomplete but valid JSON number."""
+        """Check whether text is a syntactically valid partial JSON number.
+
+        Args:
+            text: Candidate numeric prefix to validate.
+
+        Returns:
+            bool: ``True`` when the text can still become a valid JSON number.
+        """
         return bool(JSONValidator.REGEX_PARTIAL_NUMBER.fullmatch(text))
 
     @staticmethod
     def extract_complete_number(text: str) -> tuple[str, str]:
-        """Extract a complete number. Returns (number, remainder)."""
+        """Extract the longest complete number prefix from text.
+
+        Args:
+            text: Text beginning with potential numeric content.
+
+        Returns:
+            tuple[str, str]: Extracted number prefix and remaining suffix.
+        """
         match = JSONValidator.REGEX_PREFIX_NUMBER.match(text)
         if match:
             matched_text = match.group()
@@ -39,12 +53,26 @@ class State(BaseModel, ABC):
     def get_valid_tokens(
             self, vocab_index: VocabIndex
     ) -> set[int]:
-        """Return the set of valid token IDs for this state."""
+        """Return token IDs that keep generation valid for this state.
+
+        Args:
+            vocab_index: Vocabulary metadata used to compute valid IDs.
+
+        Returns:
+            set[int]: Allowed next token IDs under this state's constraints.
+        """
         pass
 
     @abstractmethod
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Transition to the next state. Returns (next_state, remainder)."""
+        """Consume token text and compute the next parser state.
+
+        Args:
+            token_str: Generated token text to consume.
+
+        Returns:
+            tuple[State, str]: Next state and unconsumed remainder text.
+        """
         pass
 
 
@@ -52,9 +80,25 @@ class StateTerminal(State):
     """Terminal state - generation is complete."""
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return no valid tokens because generation has finished.
+
+        Args:
+            vocab_index: Unused vocabulary index.
+
+        Returns:
+            set[int]: Always an empty set.
+        """
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Stay terminal and discard any incoming token text.
+
+        Args:
+            token_str: Unused token text.
+
+        Returns:
+            tuple[State, str]: This state and an empty remainder.
+        """
         return self, ""
 
 
@@ -65,9 +109,26 @@ class StateExpectLiteral(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return an empty set because literals are short-circuited upstream.
+
+        Args:
+            vocab_index: Unused vocabulary index.
+
+        Returns:
+            set[int]: Always an empty set.
+        """
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume literal text and jump when the expected string is matched.
+
+        Args:
+            token_str: Incoming token text appended to the internal buffer.
+
+        Returns:
+            tuple[State, str]: Next state with overflow text when literal is
+            complete; otherwise this state and an empty remainder.
+        """
         self.buffer += token_str
 
         if self.buffer.startswith(self.expected):
@@ -84,6 +145,14 @@ class StateBranch(State):
     choices: dict[str, State] = Field(...)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Compute tokens that can continue at least one branch choice.
+
+        Args:
+            vocab_index: Vocabulary index used for literal token matching.
+
+        Returns:
+            set[int]: Token IDs that preserve a valid branch continuation.
+        """
         valid_ids: set[int] = set()
 
         # Find choices that can continue from the current buffer
@@ -99,6 +168,15 @@ class StateBranch(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume token text and transition when a branch is completed.
+
+        Args:
+            token_str: Generated token text to append to branch buffer.
+
+        Returns:
+            tuple[State, str]: Matching branch target and remainder, or this
+            state with an empty remainder if still incomplete.
+        """
         self.buffer += token_str
 
         # Find the first matching choice
@@ -116,6 +194,15 @@ class StateParseNumber(State):
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Compute token IDs that keep the number parse valid.
+
+        Args:
+            vocab_index: Vocabulary index containing numeric token groups.
+
+        Returns:
+            set[int]: Token IDs that preserve a valid partial number or can
+            complete a number before valid following literal text.
+        """
         valid_ids: set[int] = set()
 
         expected_next_text = getattr(self.next_state, 'expected', '')
@@ -140,6 +227,15 @@ class StateParseNumber(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume token text and exit once a full number is delimited.
+
+        Args:
+            token_str: Generated token text appended to the number buffer.
+
+        Returns:
+            tuple[State, str]: Next state with delimiter remainder when a
+            complete number is found; otherwise this state and empty remainder.
+        """
         self.buffer += token_str
         matched_text, remain_str = JSONValidator.extract_complete_number(
             self.buffer)
@@ -159,6 +255,15 @@ class StateParseString(State):
     has_opened: bool = Field(default=False)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return valid token IDs for JSON string opening or content.
+
+        Args:
+            vocab_index: Vocabulary index with string-related token filters.
+
+        Returns:
+            set[int]: Quote token before opening; content and closing tokens
+            once the opening quote has been generated.
+        """
 
         if not self.has_opened:
             return vocab_index.filter_vocab.exact_quote_tokens
@@ -166,6 +271,15 @@ class StateParseString(State):
                 vocab_index.filter_vocab.string_closer_tokens)
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume string token text and exit when closing quote appears.
+
+        Args:
+            token_str: Generated token text for the string value.
+
+        Returns:
+            tuple[State, str]: Next state with overflow after closing quote, or
+            this state and empty remainder while string parsing continues.
+        """
         if not self.has_opened:
             if '"' in token_str:
                 self.has_opened = True
