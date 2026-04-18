@@ -83,7 +83,7 @@ class StateTerminal(State):
         """Return no valid tokens because generation has finished.
 
         Args:
-            vocab_index: Unused vocabulary index.
+            vocab_index: Vocabulary index parameter from the shared interface.
 
         Returns:
             set[int]: Always an empty set.
@@ -94,7 +94,7 @@ class StateTerminal(State):
         """Stay terminal and discard any incoming token text.
 
         Args:
-            token_str: Unused token text.
+            token_str: Incoming token text, ignored in the terminal state.
 
         Returns:
             tuple[State, str]: This state and an empty remainder.
@@ -112,7 +112,7 @@ class StateExpectLiteral(State):
         """Return an empty set because literals are short-circuited upstream.
 
         Args:
-            vocab_index: Unused vocabulary index.
+            vocab_index: Vocabulary index parameter from the shared interface.
 
         Returns:
             set[int]: Always an empty set.

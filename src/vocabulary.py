@@ -122,9 +122,8 @@ class VocabIndex(BaseModel):
 
         Returns:
             set[int]: Token IDs where either the token starts with the
-            remainder or the remainder starts with the token.
-
-        Results are cached for performance.
+            remainder or the remainder starts with the token. Results are
+            cached for performance.
         """
         if remainder not in self.literal_cache:
             matching_tokens: set[int] = set()
