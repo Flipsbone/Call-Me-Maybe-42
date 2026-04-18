@@ -15,6 +15,7 @@ from src.state_machine import (
 
 
 class GenerationJsonError(Exception):
+    pass
     """Raised when constrained generation cannot produce valid JSON output."""
 
 
