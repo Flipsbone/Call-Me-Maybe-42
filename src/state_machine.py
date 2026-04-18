@@ -1,284 +1,180 @@
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
-from src.vocabulary import VocabFilter
+from src.vocabulary import VocabIndex
 
 WS = r'[ \n\r\t]*'
 
-REGEX_PARTIAL_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*$')
-REGEX_PREFIX_STRING = re.compile(fr'^{WS}"([^"\\]|\\.)*"')
 
-REGEX_PARTIAL_NUMBER = re.compile(
-    fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
-REGEX_PREFIX_NUMBER = re.compile(
-    fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?')
+class JSONValidator:
+    """Utility to validate and extract JSON numbers."""
+
+    REGEX_PARTIAL_NUMBER = re.compile(
+        fr'^{WS}-?(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d*)?$')
+    REGEX_PREFIX_NUMBER = re.compile(
+        fr'^{WS}-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?')
+
+    @staticmethod
+    def is_partial_number(text: str) -> bool:
+        """Check if text is an incomplete but valid JSON number."""
+        return bool(JSONValidator.REGEX_PARTIAL_NUMBER.fullmatch(text))
+
+    @staticmethod
+    def extract_complete_number(text: str) -> tuple[str, str]:
+        """Extract a complete number. Returns (number, remainder)."""
+        match = JSONValidator.REGEX_PREFIX_NUMBER.match(text)
+        if match:
+            matched_text = match.group()
+            return matched_text, text[len(matched_text):]
+        return "", text
 
 
 class State(BaseModel, ABC):
-    """Abstract base class for constrained decoding states.
-
-    Attributes:
-        buffer (str): Temporary text accumulator for the current state.
-    """
+    """Base state class for the state machine."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     buffer: str = Field(default="")
 
     @abstractmethod
     def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Return token ids that are valid for the current buffer."""
+            self, vocab_index: VocabIndex
+    ) -> set[int]:
+        """Return the set of valid token IDs for this state."""
         pass
 
     @abstractmethod
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Consume a token fragment and determine the next state.
-
-        Args:
-            token_str: Raw text fragment produced by the model.
-
-        Returns:
-            tuple[State, str]: A tuple containing the new state
-                (or itself) and the overflow text not consumed.
-        """
+        """Transition to the next state. Returns (next_state, remainder)."""
         pass
 
 
 class StateTerminal(State):
-    """Terminal state indicating that generation is complete."""
+    """Terminal state - generation is complete."""
 
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
-        """Terminal states accept no further tokens."""
+    def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Remain terminal and discard any incoming token fragment."""
         return self, ""
 
 
 class StateExpectLiteral(State):
-    """State that requires a fixed literal prefix or suffix."""
+    """Expect an exact literal string to be generated."""
 
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Return tokens that can continue or complete the expected text."""
-
-        if not self.expected.startswith(self.buffer):
-            return set()
-
-        remainder = self.expected[len(self.buffer):]
-        if not remainder:
-            return set()
-
-        return vocab_filter.get_literal_matches(remainder, clean_vocab)
+    def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Advance the literal buffer and return any overflow text."""
         self.buffer += token_str
+
         if self.buffer.startswith(self.expected):
-            overflow = self.buffer[len(self.expected):]
-            next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
+            remain_str = self.buffer[len(self.expected):]
+            next_state = self.next_state or StateTerminal()
+            return next_state, remain_str
+
         return self, ""
 
 
 class StateBranch(State):
-    """State that accepts one of several literal choices."""
+    """Choose between multiple possible branches."""
 
     choices: dict[str, State] = Field(...)
 
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Return tokens that can extend any currently matching branch."""
-
+    def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
         valid_ids: set[int] = set()
 
+        # Find choices that can continue from the current buffer
         for choice in self.choices.keys():
-            if choice.startswith(self.buffer):
-                remainder = choice[len(self.buffer):]
-                if remainder:
-                    valid_ids.update(
-                        vocab_filter.get_literal_matches(
-                            remainder, clean_vocab))
+            if not choice.startswith(self.buffer):
+                continue
+
+            # Add tokens that extend this choice
+            remainder = choice[len(self.buffer):]
+            if remainder:
+                valid_ids.update(vocab_index.get_literal_matches(remainder))
 
         return valid_ids
 
-    def transition(self, token_str: str) -> tuple[State, str]:
-        """Advance the branch buffer and move to the matching next state."""
+    def transition(self, token_str: str) -> tuple["State", str]:
         self.buffer += token_str
-        for choice, next_s in self.choices.items():
+
+        # Find the first matching choice
+        for choice, next_state in self.choices.items():
             if self.buffer.startswith(choice):
-                overflow = self.buffer[len(choice):]
-                return next_s, overflow
+                remain_str = self.buffer[len(choice):]
+                return next_state, remain_str
+
         return self, ""
 
 
 class StateParseNumber(State):
-    """State incrementally validating a number in JSON format.
-
-    Attributes:
-        next_state (State | None): State to transition to after the
-            number is fully parsed.
-    """
+    """Parse a JSON number."""
 
     next_state: State | None = Field(default=None)
 
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Return token ids that keep the buffered text a valid number."""
-
+    def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
         valid_ids: set[int] = set()
 
-        test_fullmatch = REGEX_PARTIAL_NUMBER.fullmatch
-        test_prefix = REGEX_PREFIX_NUMBER.match
-        buf = self.buffer
-        expected_next = getattr(self.next_state, 'expected', '')
+        expected_next_text = getattr(self.next_state, 'expected', '')
 
-        for token_id in vocab_filter.numeric_tokens:
-            test_str = buf + clean_vocab[token_id]
+        for token_id in vocab_index.filter_vocab.numeric_tokens:
+            token_str = vocab_index.clean_vocab[token_id]
+            simulated_text = self.buffer + token_str
 
-            if test_fullmatch(test_str):
+            # If it's a valid incomplete number, accept it
+            if JSONValidator.is_partial_number(simulated_text):
                 valid_ids.add(token_id)
-            else:
-                match = test_prefix(test_str)
-                if match:
-                    overflow = test_str[match.end():]
-                    if not overflow:
-                        valid_ids.add(token_id)
-                    elif expected_next.startswith(overflow):
-                        valid_ids.add(token_id)
+                continue
+
+            # Check if we can complete the number
+            matched_text, remain_str = JSONValidator.extract_complete_number(
+                simulated_text)
+
+            if matched_text and (not remain_str or
+                                 expected_next_text.startswith(remain_str)):
+                valid_ids.add(token_id)
 
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Consume numeric text and advance once a delimiter is found."""
         self.buffer += token_str
-        match = REGEX_PREFIX_NUMBER.match(self.buffer)
-        if match:
-            num_part = match.group()
-            whitespace_len = len(self.buffer) - len(self.buffer.lstrip())
-            overflow = self.buffer[whitespace_len + len(num_part):]
-            if overflow and overflow[0] in ',}]\n':
-                next_s = (
-                    self.next_state if self.next_state else StateTerminal())
-                return next_s, overflow
+        matched_text, remain_str = JSONValidator.extract_complete_number(
+            self.buffer)
+
+        # Complete number detected and valid separator follows
+        if matched_text and remain_str and remain_str[0] in ',}]\n':
+            next_state = self.next_state or StateTerminal()
+            return next_state, remain_str
+
         return self, ""
 
 
 class StateParseString(State):
-    """State that incrementally validates a JSON string literal."""
+    """Parse a JSON string - simplified version."""
 
     next_state: State | None = Field(default=None)
+    has_opened: bool = Field(default=False)
 
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Return token ids that keep the buffered text a valid string."""
+    def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
 
-        expected_next = getattr(self.next_state, 'expected', '')
-        buffer_match = REGEX_PREFIX_STRING.match(self.buffer)
-
-        if buffer_match:
-            return self._handle_closed_string(
-                match_end=buffer_match.end(),
-                expected_next=expected_next,
-                clean_vocab=clean_vocab,
-                vocab_filter=vocab_filter
-            )
-
-        return self._handle_open_string(
-            expected_next=expected_next,
-            clean_vocab=clean_vocab,
-            vocab_filter=vocab_filter
-        )
-
-    def _handle_closed_string(
-            self, match_end: int, expected_next: str,
-            clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Handle a string that is already closed and may expose overflow."""
-
-        valid_ids: set[int] = set()
-        overflow_len = len(self.buffer) - match_end
-
-        if overflow_len > 0 and not expected_next.startswith(
-                self.buffer[match_end:]):
-            return valid_ids
-
-        remaining_expected = expected_next[overflow_len:]
-        if remaining_expected:
-            valid_ids.update(vocab_filter.get_literal_matches(
-                remaining_expected, clean_vocab))
-
-        return valid_ids
-
-    def _handle_open_string(
-            self, expected_next: str, clean_vocab: dict[int, str],
-            vocab_filter: VocabFilter) -> set[int]:
-        """Handle a string that is still open and must remain valid JSON."""
-
-        valid_ids: set[int] = set()
-
-        has_opening_quote = self.buffer.lstrip().startswith('"')
-        if has_opening_quote:
-            valid_ids.update(vocab_filter.string_safe_tokens)
-
-        test_fullmatch = REGEX_PARTIAL_STRING.fullmatch
-        test_prefix = REGEX_PREFIX_STRING.match
-        buf = self.buffer
-
-        for token_id in vocab_filter.string_unsafe_tokens:
-            test_str = buf + clean_vocab[token_id]
-
-            if test_fullmatch(test_str):
-                valid_ids.add(token_id)
-            else:
-                match = test_prefix(test_str)
-                if match:
-                    overflow = test_str[match.end():]
-                    if not overflow or expected_next.startswith(overflow):
-                        valid_ids.add(token_id)
-
-        return valid_ids
+        if not self.has_opened:
+            return vocab_index.filter_vocab.exact_quote_tokens
+        return (vocab_index.filter_vocab.string_content_tokens |
+                vocab_index.filter_vocab.string_closer_tokens)
 
     def transition(self, token_str: str) -> tuple["State", str]:
-        """Consume string text and advance once a full string is matched."""
+        if not self.has_opened:
+            if '"' in token_str:
+                self.has_opened = True
+            return self, ""
+
+        if '"' in token_str:
+            idx = token_str.find('"')
+            next_state = self.next_state or StateTerminal()
+            return next_state, token_str[idx + 1:]
+
         self.buffer += token_str
-        match = REGEX_PREFIX_STRING.match(self.buffer)
-        if match:
-            string_part = match.group()
-            overflow = self.buffer[len(string_part):]
-            next_s = self.next_state if self.next_state else StateTerminal()
-            return next_s, overflow
         return self, ""
-
-
-class JsonStateMachine(BaseModel):
-    """Wrapper around the current constrained-decoding state."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    current_state: State
-
-    def get_valid_tokens(
-            self, clean_vocab: dict[int, str], vocab_filter: VocabFilter
-            ) -> set[int]:
-        """Delegate valid-token discovery to the active state."""
-
-        return self.current_state.get_valid_tokens(clean_vocab, vocab_filter)
-
-    def step(self, token_str: str) -> None:
-        """Advance the machine by consuming a token fragment."""
-        overflow = token_str
-        state = self.current_state
-        while overflow and not isinstance(state, StateTerminal):
-            state, overflow = state.transition(overflow)
-            self.current_state = state

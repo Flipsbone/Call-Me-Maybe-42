@@ -4,43 +4,13 @@ import argparse
 from pathlib import Path
 from pydantic import BaseModel, ValidationError
 from typing import Any
-from src.functions_validator import FunctionDefinition
+from src.functions_validator import FunctionDefinition, FunctionCallingTest
 
 
-class FunctionCallingTest(BaseModel):
-    """Single prompt used to validate function-calling generation."""
+def parse_arguments_and_load_data() -> (
+            tuple[Path, list[FunctionDefinition],
+                  list[FunctionCallingTest]]):
 
-    prompt: str
-
-
-class AppConfig(BaseModel):
-    """Validated application configuration loaded from CLI arguments.
-
-    Attributes:
-        output_path (Path): Destination path for the JSON results.
-        functions_definition (list[FunctionDefinition]): List of available
-            function signatures.
-        function_calling_tests (list[FunctionCallingTest]): List of test
-            prompts to process.
-    """
-
-    output_path: Path
-    functions_definition: list[FunctionDefinition]
-    function_calling_tests: list[FunctionCallingTest]
-
-
-def setup_configuration() -> AppConfig:
-    """Parse CLI arguments and load the global application configuration.
-
-    Returns:
-        AppConfig: Instance containing paths and validated input data.
-
-    Raises:
-        SystemExit: If an input file is missing or if the output
-            directory cannot be created.
-        ValidationError: If the JSON data structure does not match
-            the expected models.
-    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,
                         default=Path("data/input/functions_definition.json"))
@@ -66,15 +36,7 @@ def setup_configuration() -> AppConfig:
         sys.exit(f"Error: Could not create output dir. {args.output.parent}"
                  f"\nDetails: {e}")
 
-    try:
-        return AppConfig(
-            output_path=args.output,
-            functions_definition=functions_def,
-            function_calling_tests=calling_tests
-        )
-    except ValidationError as e:
-        sys.exit(f"CRITICAL ERROR: Invalid global configuration."
-                 f"\nDetails:\n{e}")
+    return args.output, functions_def, calling_tests
 
 
 def _load_json_data(
@@ -101,12 +63,11 @@ def _load_json_data(
 
         return [model_class.model_validate(item) for item in raw_data]
 
-    except FileNotFoundError:
-        sys.exit(f"Error: File '{file_path}' not found.")
-    except PermissionError:
-        sys.exit(f"Error: Insufficient permissions to read '{file_path}'.")
+    except (FileNotFoundError, PermissionError):
+        sys.exit(f"Error accessing file '{file_path}'.")
     except json.JSONDecodeError as e:
         sys.exit(f"Error: '{file_path}' is not valid JSON. {e.msg}")
-    except ValidationError as e:
-        sys.exit(f"Error: Data validation failed for '{file_path}'."
-                 f"\nDetails:\n{e}")
+    except ValidationError:
+        sys.exit("Error: Data validation failed.")
+    except Exception as e:
+        sys.exit(f"Unexpected error with '{file_path}': {e}")

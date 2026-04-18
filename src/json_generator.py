@@ -2,11 +2,10 @@ import json
 from typing import Any
 from pydantic import BaseModel, ConfigDict
 
-from src.generator import ConstrainedGenerator
+from src.constrained_decoder import ConstrainedDecoder
 from src.functions_validator import FunctionDefinition
 from src.state_machine import (
     State,
-    JsonStateMachine,
     StateTerminal,
     StateExpectLiteral,
     StateBranch,
@@ -16,65 +15,73 @@ from src.state_machine import (
 
 
 class GenerationJsonError(Exception):
-    """Raised when generated output cannot be converted to valid JSON."""
-
     pass
 
 
 class TwoStepJsonGenerator(BaseModel):
-    """Generator for function calls in two constrained steps.
-
-    Attributes:
-        user_prompt (str): The user's natural language request.
-        functions_definition (list[FunctionDefinition]): Available tools.
-        generator (ConstrainedGenerator): Constrained generation engine.
-    """
-
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
     functions_definition: list[FunctionDefinition]
-    generator: ConstrainedGenerator
+    assistant: ConstrainedDecoder
 
-    def prompt_for_name(self) -> str:
-        """Build the prompt used to select the target function name.
+    def generate(self) -> dict[str, Any]:
+        chosen_name = self._generate_function_name()
+        target_function = self._find_function_by_name(chosen_name)
+        final_parameters = self._generate_function_parameters(target_function)
 
-        Returns:
-            str: Chat-style prompt describing the available functions.
-        """
+        return {
+            "prompt": self.user_prompt,
+            "name": chosen_name,
+            "parameters": final_parameters
+        }
+
+    def _generate_function_name(self) -> str:
+        prompt = self._create_prompt_for_function_selection()
+        state = self._create_state_machine_for_function_selection()
+
+        chosen_name = self.assistant.generate(
+            prompt=prompt,
+            state=state,
+            max_tokens=15
+        )
+        return chosen_name
+
+    def _generate_function_parameters(
+            self, target_fn: FunctionDefinition) -> dict[str, Any]:
+        prompt = self._create_prompt_for_parameter_extraction(target_fn)
+        state = self._create_state_machine_for_parameter_extraction(target_fn)
+
+        generated_params_text = self.assistant.generate(
+            prompt=prompt,
+            state=state,
+            max_tokens=100
+        )
+
+        final_parameters = self._parse_and_validate_json(generated_params_text)
+        self._convert_number_types(final_parameters, target_fn)
+
+        return final_parameters
+
+    def _create_prompt_for_function_selection(self) -> str:
         prompt = ("<|im_start|>system\nChoose the exact function name."
                   "\nFunctions:\n")
 
-        for f in self.functions_definition:
-            prompt += f"- {f.name}: {f.description}\n"
+        for func in self.functions_definition:
+            prompt += f"- {func.name}: {func.description}\n"
 
         prompt += (f"<|im_end|>\n<|im_start|>user\n{self.user_prompt}"
                    "<|im_end|>\n<|im_start|>assistant\n")
 
         return prompt
 
-    def machine_for_name(self) -> JsonStateMachine:
-        """Create a state machine that accepts only valid function names."""
-        if not self.functions_definition:
-            return JsonStateMachine(current_state=StateTerminal())
+    def _create_state_machine_for_function_selection(self) -> State:
+        choices: dict[str, State] = {
+            fn.name: StateTerminal() for fn in self.functions_definition
+        }
+        return StateBranch(choices=choices)
 
-        choices: dict[str, State] = {}
-
-        for fn in self.functions_definition:
-            choices[fn.name] = StateTerminal()
-
-        branch_state = StateBranch(choices=choices)
-        return JsonStateMachine(current_state=branch_state)
-
-    def prompt_for_params(self, target_fn: FunctionDefinition) -> str:
-        """Build the prompt used to extract parameters for one function.
-
-        Args:
-            target_fn: Selected function definition whose parameters should
-                be extracted.
-
-        Returns:
-            str: Chat-style prompt focused on parameter extraction.
-        """
+    def _create_prompt_for_parameter_extraction(
+            self, target_fn: FunctionDefinition) -> str:
         params_info = (", ".join(
             [f"'{p_name}' ({p_model.type})"
              for p_name, p_model in target_fn.parameters.items()]))
@@ -87,118 +94,71 @@ class TwoStepJsonGenerator(BaseModel):
             "CRITICAL: Do NOT execute the command."
             "Do NOT calculate or reverse anything."
             "ONLY extract the exact literal values from the text.\n"
+            "For string parameters, preserve the EXACT case from the input.\n"
             "<|im_end|>\n"
             f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
         return prompt
 
-    def machine_for_params(
-            self, target_fn: FunctionDefinition) -> JsonStateMachine:
-        """Create a state machine that emits JSON for one function call.
-
-        Args:
-            target_fn: Selected function definition used to shape the JSON.
-
-        Returns:
-            JsonStateMachine: Machine constrained to the function's
-            parameter schema.
-        """
-        val_state: State
-
+    def _create_state_machine_for_parameter_extraction(
+            self, target_fn: FunctionDefinition) -> State:
         if not target_fn.parameters:
-            empty_state = StateExpectLiteral(
-                expected='{}', next_state=StateTerminal())
-            return JsonStateMachine(current_state=empty_state)
+            return StateExpectLiteral(
+                expected='{}',
+                next_state=StateTerminal())
 
-        tail_state = StateTerminal()
         current_state: State = StateExpectLiteral(
-            expected='\n}', next_state=tail_state)
+            expected='\n}', next_state=StateTerminal())
 
         params = list(target_fn.parameters.items())
 
         for i in reversed(range(len(params))):
             p_name, p_model = params[i]
-
-            if p_model.type in ["number", "integer"]:
-                val_state = StateParseNumber(next_state=current_state)
-            else:
-                val_state = StateParseString(next_state=current_state)
-
-            is_first = (i == 0)
-
+            val_state: State = (
+                StateParseNumber(next_state=current_state)
+                if p_model.type in ["number", "integer"]
+                else StateParseString(next_state=current_state)
+            )
             prefix = (
-                f'{{\n  "{p_name}": ' if is_first else f',\n  "{p_name}": ')
+                f'{{\n  "{p_name}": ' if i == 0 else f',\n  "{p_name}": ')
 
             current_state = StateExpectLiteral(
                 expected=prefix, next_state=val_state)
 
-        return JsonStateMachine(current_state=current_state)
+        return current_state
 
-    def generate(self) -> dict[str, Any]:
-        """Generate the function name and then extract its parameters.
+    def _find_function_by_name(self, function_name: str) -> FunctionDefinition:
+        for func in self.functions_definition:
+            if func.name == function_name:
+                return func
+        raise GenerationJsonError(f"Unknown function: {function_name}")
 
-        Returns:
-            dict[str, Any]: Dictionary containing the prompt, the chosen
-                function name, and its extracted parameters.
-
-        Raises:
-            GenerationJsonError: If the model selects a non-existent
-                function or if the parameters JSON is malformed.
-        """
-
-        self.generator.machine = self.machine_for_name()
-        name_prompt = self.prompt_for_name()
-        selected_name = self.generator.generate(name_prompt, 15)
-
-        target_fn = None
-        for function in self.functions_definition:
-            if function.name == selected_name:
-                target_fn = function
-
-        if target_fn is None:
-            raise GenerationJsonError(f"LLM generated an unknown function: "
-                                      f"'{selected_name}'")
-
-        self.generator.machine = self.machine_for_params(target_fn)
-        params_prompt = self.prompt_for_params(target_fn)
-        params_str = self.generator.generate(params_prompt, 100)
+    def _parse_and_validate_json(self, json_text: str) -> dict[str, Any]:
+        if json_text.strip() == "":
+            return {}
 
         try:
-            params_dict = json.loads(params_str) if params_str.strip() else {}
+            result = json.loads(json_text)
+            if isinstance(result, dict):
+                return result
+            else:
+                return {}
         except json.JSONDecodeError:
-            raise GenerationJsonError("LLM generated invalid JSON:"
-                                      f"{params_str}")
+            raise GenerationJsonError(
+                f"Invalid JSON: {json_text}")
 
-        for p_name, p_val in params_dict.items():
-            if p_name in target_fn.parameters:
-                if target_fn.parameters[p_name].type == "number":
-                    params_dict[p_name] = float(p_val)
+    def _convert_number_types(
+            self, parameters: dict[str, Any],
+            target_fn: FunctionDefinition) -> None:
+        for param_name, param_details in target_fn.parameters.items():
+            if param_name in parameters:
+                val = parameters[param_name]
 
-        return {
-            "prompt": self.user_prompt,
-            "name": selected_name,
-            "parameters": params_dict
-        }
-
-
-def process_single_prompt_optimized(
-    user_prompt: str, functions_definition: list[FunctionDefinition],
-        generator: ConstrainedGenerator) -> dict[str, Any]:
-    """Generate a structured function-call result for one user prompt.
-
-    Args:
-        user_prompt: Natural-language user request to process.
-        functions_definition: Available functions the model may choose from.
-        generator: Constrained generator used to produce the result.
-
-    Returns:
-        dict[str, Any]: Generated function-call payload.
-    """
-
-    json_gen = TwoStepJsonGenerator(
-        user_prompt=user_prompt,
-        functions_definition=functions_definition,
-        generator=generator
-    )
-    return json_gen.generate()
+                try:
+                    if param_details.type == "number":
+                        parameters[param_name] = float(val)
+                    elif param_details.type == "integer":
+                        parameters[param_name] = int(float(val))
+                except (ValueError, TypeError):
+                    pass
