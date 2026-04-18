@@ -214,8 +214,9 @@ class TwoStepJsonGenerator(BaseModel):
             json_text: Raw generated text expected to encode a JSON object.
 
         Returns:
-            dict[str, Any]: Parsed object. Returns an empty dictionary for
-            empty text or non-dictionary JSON payloads.
+            dict[str, Any]: Parsed JSON object dictionary, or an empty
+            dictionary if the text is empty or the payload is not a
+            dictionary.
 
         Raises:
             GenerationJsonError: If text is non-empty and not valid JSON.
