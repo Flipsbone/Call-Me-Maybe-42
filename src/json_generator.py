@@ -238,12 +238,11 @@ class TwoStepJsonGenerator(BaseModel):
             target_fn: FunctionDefinition) -> None:
         """Convert numeric parameter values to schema-expected Python types.
 
+        This method mutates ``parameters`` in place.
+
         Args:
             parameters: Parsed parameter dictionary to normalize in place.
             target_fn: Function schema containing expected parameter types.
-
-        Returns:
-            None: This method mutates ``parameters`` in place.
         """
         for param_name, param_details in target_fn.parameters.items():
             if param_name in parameters:

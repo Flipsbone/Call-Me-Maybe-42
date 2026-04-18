@@ -81,9 +81,6 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
         results: Validated result payloads to serialize.
         output_path: Destination file where output JSON is written.
 
-    Returns:
-        None
-
     Raises:
         SystemExit: If writing the output file fails.
     """
@@ -101,9 +98,6 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 def main() -> None:
     """Run the end-to-end function-calling evaluation pipeline.
-
-    Returns:
-        None: This is the CLI entrypoint and does not return a value.
     """
     start_time: float = time.time()
     output_path, functions_def, tests = parse_arguments_and_load_data()
