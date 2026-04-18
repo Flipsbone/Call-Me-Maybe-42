@@ -36,8 +36,8 @@ class TwoStepJsonGenerator(BaseModel):
         """Generate the final function call object for the user prompt.
 
         Returns:
-            dict[str, Any]: Dictionary with `prompt`, `name`, and
-            `parameters` fields.
+            dict[str, Any]: Dictionary with prompt, name, and parameters
+            fields.
 
         Raises:
             GenerationJsonError: If generated function selection or parameters

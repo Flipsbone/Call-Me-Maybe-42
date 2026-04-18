@@ -29,7 +29,7 @@ class StrictVocabFilter(BaseModel):
             clean_vocab: Mapping from token IDs to decoded token strings.
 
         Returns:
-            StrictVocabFilter: Filter object with token IDs grouped by usage.
+            Filter object with token IDs grouped by usage.
         """
 
         numeric_tokens_set: set[int] = set()
@@ -81,7 +81,7 @@ class VocabIndex(BaseModel):
             model: Model object exposing vocab path and decode capabilities.
 
         Returns:
-            VocabIndex: Fully initialized vocabulary index and filter sets.
+            Fully initialized vocabulary index and filter sets.
 
         Raises:
             SystemExit: If vocabulary loading or processing fails.
