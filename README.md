@@ -52,24 +52,32 @@ AI Usage & Assistance
 * Debugging: Generating edge-case unit tests to ensure the regex-based parsing handled escaped characters correctly.
 
 ## 4. Algorithm Explanation
-My approach to guaranteed JSON generation relies on a **Context-Free Grammar (CFG) Constrained Decoder** powered by a custom **Finite State Machine (FSM)**. Instead of parsing the output *after* generation, i mathematically restrict the model's choices *during* generation.
+4. Algorithm Explanation
+
+My approach to guaranteed JSON generation relies on a **Context-Free Grammar (CFG) Constrained Decoder** powered by a custom **Finite State Machine (FSM)**. Instead of parsing the output *after* generation, I mathematically restrict the model's choices *during* generation.
 
 The process operates in a two-step orchestration (`TwoStepJsonGenerator`):
+
 1. **Phase 1 (Function Routing):** The model is forced to output only a valid function name from the provided schema using a `StateBranch`.
+
 2. **Phase 2 (Parameter Extraction):** The engine dynamically builds a linked chain of states (`StateExpectLiteral`, `StateParseString`, `StateParseNumber`) corresponding exactly to the chosen function's parameters.
 
 **The Constrained Decoding Engine (`ConstrainedGenerator`):**
 For every single step of generation, the FSM executes a **Logit Masking** protocol:
 * The current state (e.g., `StateParseString`) calculates a strict `set` of allowed Token IDs (the "valid tokens").
-* I retrieve the raw probability scores (`logits`) from the Qwen model for the entire 32k+ vocabulary.
+
+* I retrieve the raw probability scores (`logits`) from the Qwen model.
+
 * I apply a mathematical mask: all tokens *not* in the valid set are ignored.
-* The model is forced to choose the highest-scoring token exclusively from the mathematically valid subset, ensuring syntax errors are physically impossible.
+
+* The model is forced to choose the highest-scoring token exclusively from the mathematically valid subset.
+
 
 ## 5. Design Decisions
 * **Qwen3-0.6B Model:** Selected for its minimal memory footprint and high inference speed. Being a 0.6B parameter model, it runs efficiently on standard hardware.
 * **Pure Greedy Decoding:** All generation uses absolute greedy decoding (`np.argmax` with Temperature = 0). When extracting structured API parameters, "creativity" is a liability. Greedy decoding ensures deterministic, predictable, and highly accurate data extraction.
-* **Literal Short-Circuiting:** In JSON, much of the structure is predictable (e.g., `{\n  "name": `). When the FSM enters a `StateExpectLiteral`, or when there is only one mathematically valid token left, **the LLM is completely bypassed**. The text is injected directly into the buffer. This avoids useless neural network forward passes, drastically saving compute time.
-* **String Fast-Path:** Inside `StateParseString`, validating every token with Regex would be too slow. I implemented a "fast path" that instantly approves over 30,000 "safe tokens" if a string is currently open, reserving the heavy Regex logic only for tokens containing quotes or escape characters.
+* **Literal Short-Circuiting:** In JSON, much of the structure is predictable (e.g., `{\n  "name": `). When the FSM enters a `StateExpectLiteral`, **the LLM is completely bypassed**. The text is injected directly into the buffer. 
+* **String Fast-Path:** Inside `StateParseString`,a "fast path" approves over 30,000 "safe tokens" instantly, reserving heavy Regex logic only for quotes or escape characters.
 
 ## 6. Performance Analysis
 * **Accuracy (100% Syntax Validity):** Due to strict logit masking, "Invalid JSON" exceptions are eliminated. The FSM guarantees that brackets close, quotes match, and commas are correctly placed.
@@ -79,14 +87,15 @@ For every single step of generation, the FSM executes a **Logit Masking** protoc
 ## 7. Challenges Faced
 The most significant technical hurdle was handling **BPE Token Boundaries**.
 
-* **The Problem:** The LLM uses Byte Pair Encoding (BPE), meaning it generates statistical chunks of text (tokens), not individual characters. Frequently, a single token spans across two distinct JSON structural boundaries. For example, the model might generate the token `"25},\n"`. Half of this token belongs to the `StateParseNumber` logic, and the other half belongs to the `StateExpectLiteral` closing logic.
-* **The Solution:** I engineered an **Overflow Buffer** system. When a token is selected, the current state validates it using a prefix match (`REGEX_PREFIX_STRING` or `REGEX_PREFIX_NUMBER`). It consumes only the characters it needs and perfectly slices the remainder (the overflow). This overflow is then seamlessly passed to the `next_state` to be processed, ensuring zero data loss and preventing FSM crashes.
+* **The Problem:** Tokens frequently span across two distinct JSON structural boundaries (e.g., a token containing both a number and a comma).
+
+* **The Solution:** I engineered an **Overflow Buffer** system. When a token is selected, the state validates it, consumes necessary characters, and slices the remainder to be passed to the next_state.
 
 ## 8. Testing Strategy
 To ensure the robustness of the FSM and the logit masking, I employed a multi-layered testing strategy:
 * **Token Slicing Tests:** Validating the Overflow Buffer by feeding the FSM awkward, multi-boundary tokens (e.g., testing if `StateParseString` properly halts and passes `,` when fed `Alice", `).
-* **Regex Edge Cases:** Testing `StateParseNumber` against edge cases like negative numbers (`-12`), decimals (`0.5`), and ensuring it correctly awaits JSON delimiters (`,`, `}`, `]`, `\n`) before validating the end of a digit.
-* **Integration Testing:** Running the `process_single_prompt_optimized` wrapper against a diverse suite of prompts (from simple math queries to complex string replacement requests) to ensure the dynamically generated FSM successfully parses the schema from `functions_definition.json`.
+* **Regex Edge Cases:** Testing `StateParseNumber` against edge cases like decimals (`0.5`), ensuring it correctly awaits JSON delimiters (`,`, `}`, `]`, `\n`) before validating the end of a digit.
+* **Integration Testing:** Running the `process_single_prompt_optimized` wrapper against a diverse suite of prompts (from simple math queries to complex string replacement requests) to ensure the dynamically generated FSM successfully parses.
 
 ## 9. Example Usage
 You can run the end-to-end evaluation pipeline using the `uv` package manager. This command will parse the provided prompts, match them to the available functions, and output the perfectly constrained JSON calls.
@@ -102,7 +111,6 @@ uv run python -m src \
 Below is a visual representation of how the different components of **Call Me Maybe** interact:
 ```mermaid
 graph TD
-    %% Color definitions
     classDef main_file fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#333;
     classDef init_file fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#333;
     classDef core_file fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#333;
@@ -110,24 +118,24 @@ graph TD
     classDef valid_file fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#333;
 
     subgraph Orchestration ["The Orchestration"]
-        Main(("<b>__main__.py</b>\nTHE CONDUCTOR\nStarts the engine and\nroutes the user request"))
+        Main(("<b>__main__.py</b>"))
     end
     class Main main_file;
 
-    subgraph Setup ["1. The Preparation (Setting the Rules)"]
-        Config["<b>config.py</b>\nLoads system settings\nand folder paths"]
-        Vocab["<b>vocabulary.py</b>\nIndexes all words the\nAI is allowed to use"]
-        Main -->|"1. Initializes"| Config
+    subgraph Setup ["1. The Preparation"]
+        Data["<b>data_loader.py</b>\nLoads inputs/args"]
+        Vocab["<b>vocabulary.py</b>\nIndexes allowed tokens"]
+        Main -->|"1. Initializes"| Data
         Main -->|"2. Loads"| Vocab
     end
-    class Config,Vocab init_file;
+    class Data,Vocab init_file;
 
-    subgraph Core ["2. The Heart (Generation & Control)"]
-        JsonGen{"<b>json_generator.py</b>\nBrain: Decides which tool\nto use and how"}
-        Gen["<b>generator.py</b>\nWriter: Calls the AI model\nto produce text"]
-        State["<b>state_machine.py</b>\nGuardian: Blocks typos and\nforces valid JSON syntax"]
+    subgraph Core ["2. The Heart"]
+        JsonGen{"<b>json_generator.py</b>\nOrchestrates generation"}
+        Gen["<b>constrained_decoder.py</b>\nCalls LLM"]
+        State["<b>state_machine.py</b>\nEnforces JSON syntax"]
         
-        Main -->|"3. Delegates task"| JsonGen
+        Main -->|"3. Delegates"| JsonGen
         JsonGen <-->|"Directs flow"| Gen
         Gen <-->|"Validates tokens"| State
     end
@@ -135,8 +143,8 @@ graph TD
     class State rule_file;
 
     subgraph Verification ["3. The Quality Check"]
-        Valid["<b>functions_validator.py</b>\nFinal Auditor: Checks if\nthe data matches the goal"]
+        Valid["<b>functions_validator.py</b>\nValidates final schema"]
         JsonGen -->|"4. Submits work"| Valid
-        Valid -->|"5. Sends final result"| Main
+        Valid -->|"5. Saves results"| Main
     end
     class Valid valid_file;
