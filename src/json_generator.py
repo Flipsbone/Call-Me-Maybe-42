@@ -94,6 +94,7 @@ class TwoStepJsonGenerator(BaseModel):
             "CRITICAL: Do NOT execute the command."
             "Do NOT calculate or reverse anything."
             "ONLY extract the exact literal values from the text.\n"
+            "For string parameters, preserve the EXACT case from the input.\n"
             "<|im_end|>\n"
             f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n"
             "<|im_start|>assistant\n"
