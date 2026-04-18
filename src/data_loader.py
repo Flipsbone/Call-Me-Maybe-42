@@ -10,6 +10,22 @@ from src.functions_validator import FunctionDefinition, FunctionCallingTest
 def parse_arguments_and_load_data() -> (
             tuple[Path, list[FunctionDefinition],
                   list[FunctionCallingTest]]):
+    """Parse CLI arguments and load validated input datasets.
+
+    This function reads command-line paths for the function definitions,
+    prompt dataset, and output target. It validates input file existence,
+    parses JSON payloads into Pydantic models, and ensures the output
+    directory exists.
+
+    Returns:
+        tuple[Path, list[FunctionDefinition], list[FunctionCallingTest]]:
+            Output file path, validated function schema definitions, and
+            validated evaluation prompts.
+
+    Raises:
+        SystemExit: If required input files are missing, input JSON cannot be
+            loaded or validated, or the output directory cannot be created.
+    """
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--functions_definition", type=Path,
@@ -41,18 +57,21 @@ def parse_arguments_and_load_data() -> (
 
 def _load_json_data(
         file_path: Path, model_class: type[BaseModel]) -> list[Any]:
-    """Load a JSON array and validate each item via a Pydantic model.
+    """Load and validate a JSON array using a Pydantic model.
+
+    The file must contain a top-level JSON array. Each array item is validated
+    with `model_class.model_validate` before being returned.
 
     Args:
         file_path: Path to the JSON file to read.
-        model_class: Pydantic model used for unit validation.
+        model_class: Pydantic model class used for item-level validation.
 
     Returns:
-        list[Any]: List of validated objects of type `model_class`.
+        list[Any]: Validated model instances created from the JSON array.
 
     Raises:
-        SystemExit: In case of a read error, malformed JSON, or data
-            that does not conform to the model.
+        SystemExit: If file access fails, JSON is malformed, the top-level
+            value is not a list, or validation fails.
     """
     try:
         with file_path.open('r') as file:

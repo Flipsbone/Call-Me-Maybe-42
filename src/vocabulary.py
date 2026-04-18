@@ -6,6 +6,15 @@ from pydantic import BaseModel, Field
 
 
 class StrictVocabFilter(BaseModel):
+    """Pre-computed token groups used by constrained JSON parsing.
+
+    Attributes:
+        numeric_tokens: Tokens that can appear in JSON number contexts.
+        string_content_tokens: Tokens safe inside open JSON strings.
+        string_closer_tokens: Tokens containing quote characters.
+        exact_quote_tokens: Tokens that are exactly one double-quote.
+    """
+
     numeric_tokens: set[int] = Field(default_factory=set)
     string_content_tokens: set[int] = Field(default_factory=set)
     string_closer_tokens: set[int] = Field(default_factory=set)
@@ -14,6 +23,14 @@ class StrictVocabFilter(BaseModel):
     @classmethod
     def from_clean_vocab(
             cls, clean_vocab: dict[int, str]) -> "StrictVocabFilter":
+        """Build token filter sets from a decoded token vocabulary.
+
+        Args:
+            clean_vocab: Mapping from token IDs to decoded token strings.
+
+        Returns:
+            Filter object with token IDs grouped by usage.
+        """
 
         numeric_tokens_set: set[int] = set()
         string_content_tokens_set: set[int] = set()
@@ -44,12 +61,31 @@ class StrictVocabFilter(BaseModel):
 
 
 class VocabIndex(BaseModel):
+    """Store decoded vocabulary and derived lookup accelerators.
+
+    Attributes:
+        clean_vocab: Mapping of token ID to decoded text.
+        filter_vocab: Pre-computed token groups for parser states.
+        literal_cache: Cached literal-prefix token matches by remainder string.
+    """
+
     clean_vocab: dict[int, str]
     filter_vocab: StrictVocabFilter
     literal_cache: dict[str, set[int]] = Field(default_factory=dict)
 
     @classmethod
     def from_model(cls, model: Any) -> "VocabIndex":
+        """Load, decode, and index vocabulary from a model backend.
+
+        Args:
+            model: Model object exposing vocab path and decode capabilities.
+
+        Returns:
+            Fully initialized vocabulary index and filter sets.
+
+        Raises:
+            SystemExit: If vocabulary loading or processing fails.
+        """
         vocabulary_file_path = model.get_path_to_vocab_file()
 
         try:
@@ -81,11 +117,13 @@ class VocabIndex(BaseModel):
     def get_literal_matches(self, remainder: str) -> set[int]:
         """Get tokens that match the given remainder string.
 
-        Returns token IDs where either:
-        - The token starts with the remainder (prefix match)
-        - The remainder starts with the token (suffix match)
+        Args:
+            remainder: Remaining literal text expected by the state machine.
 
-        Results are cached for performance.
+        Returns:
+            set[int]: Token IDs where either the token starts with the
+            remainder or the remainder starts with the token. Results are
+            cached for performance.
         """
         if remainder not in self.literal_cache:
             matching_tokens: set[int] = set()
