@@ -22,7 +22,7 @@ class JSONValidator:
             text: Candidate numeric prefix to validate.
 
         Returns:
-            bool: ``True`` when the text can still become a valid JSON number.
+            bool: `True` when the text can still become a valid JSON number.
         """
         return bool(JSONValidator.REGEX_PARTIAL_NUMBER.fullmatch(text))
 

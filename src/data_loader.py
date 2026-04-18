@@ -60,7 +60,7 @@ def _load_json_data(
     """Load and validate a JSON array using a Pydantic model.
 
     The file must contain a top-level JSON array. Each array item is validated
-    with ``model_class.model_validate`` before being returned.
+    with `model_class.model_validate` before being returned.
 
     Args:
         file_path: Path to the JSON file to read.

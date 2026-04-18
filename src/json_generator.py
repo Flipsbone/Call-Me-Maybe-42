@@ -36,8 +36,8 @@ class TwoStepJsonGenerator(BaseModel):
         """Generate the final function call object for the user prompt.
 
         Returns:
-            dict[str, Any]: Dictionary with ``prompt``, ``name``, and
-            ``parameters`` fields.
+            dict[str, Any]: Dictionary with `prompt`, `name`, and
+            `parameters` fields.
 
         Raises:
             GenerationJsonError: If generated function selection or parameters
@@ -238,7 +238,7 @@ class TwoStepJsonGenerator(BaseModel):
             target_fn: FunctionDefinition) -> None:
         """Convert numeric parameter values to schema-expected Python types.
 
-        This method mutates ``parameters`` in place.
+        This method mutates `parameters` in place.
 
         Args:
             parameters: Parsed parameter dictionary to normalize in place.
