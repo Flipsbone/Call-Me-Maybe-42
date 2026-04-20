@@ -66,7 +66,7 @@ class TwoStepJsonGenerator(BaseModel):
         chosen_name = self.assistant.generate(
             prompt=prompt,
             state=state,
-            max_tokens=15
+            max_tokens=150
         )
         return chosen_name
 
@@ -91,7 +91,7 @@ class TwoStepJsonGenerator(BaseModel):
         generated_params_text = self.assistant.generate(
             prompt=prompt,
             state=state,
-            max_tokens=100
+            max_tokens=150
         )
 
         final_parameters = self._parse_and_validate_json(generated_params_text)
