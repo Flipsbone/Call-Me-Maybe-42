@@ -156,12 +156,10 @@ class StateBranch(State):
         """
         valid_ids: set[int] = set()
 
-        # Find choices that can continue from the current buffer
         for choice in self.choices.keys():
             if not choice.startswith(self.buffer):
                 continue
 
-            # Add tokens that extend this choice
             remainder = choice[len(self.buffer):]
             if remainder:
                 valid_ids.update(vocab_index.get_literal_matches(remainder))
@@ -180,7 +178,6 @@ class StateBranch(State):
         """
         self.buffer += token_str
 
-        # Find the first matching choice
         for choice, next_state in self.choices.items():
             if self.buffer.startswith(choice):
                 remain_str = self.buffer[len(choice):]

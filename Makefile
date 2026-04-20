@@ -10,6 +10,7 @@ uv.lock: pyproject.toml Makefile
 	@touch uv.lock
 
 install: uv.lock
+	uv sync
 
 run: install
 	@echo "Running the program..."
@@ -19,12 +20,12 @@ debug: install
 	@echo "Starting debug mode..."
 	$(PYTHON) -m pdb $(MAIN) $(ARGS)
 
-lint: install
+lint:
 	@echo "Running standard linting..."
 	uv run flake8 $(SRC)
 	uv run mypy $(SRC)
 
-lint-strict: install
+lint-strict:
 	@echo "Running strict linting..."
 	uv run flake8 $(SRC)
 	uv run mypy --strict $(SRC)
