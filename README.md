@@ -52,15 +52,14 @@ AI Usage & Assistance
 * Debugging: Generating edge-case unit tests to ensure the regex-based parsing handled escaped characters correctly.
 
 ## 4. Algorithm Explanation
-4. Algorithm Explanation
 
 My approach to guaranteed JSON generation relies on a **Context-Free Grammar (CFG) Constrained Decoder** powered by a custom **Finite State Machine (FSM)**. Instead of parsing the output *after* generation, I mathematically restrict the model's choices *during* generation.
 
 The process operates in a two-step orchestration (`TwoStepJsonGenerator`):
 
-1. **Phase 1 (Function Routing):** The model is forced to output only a valid function name from the provided schema using a `StateBranch`.
+**Phase 1 (Function Routing):** The model is forced to output only a valid function name from the provided schema using a `StateBranch`.
 
-2. **Phase 2 (Parameter Extraction):** The engine dynamically builds a linked chain of states (`StateExpectLiteral`, `StateParseString`, `StateParseNumber`) corresponding exactly to the chosen function's parameters.
+**Phase 2 (Parameter Extraction):** The engine dynamically builds a linked chain of states (`StateExpectLiteral`, `StateParseString`, `StateParseNumber`) corresponding exactly to the chosen function's parameters.
 
 **The Constrained Decoding Engine (`ConstrainedGenerator`):**
 For every single step of generation, the FSM executes a **Logit Masking** protocol:
