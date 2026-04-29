@@ -1,6 +1,6 @@
 *This project has been created as part of the 42 curriculum by Advacher*
 
-# Call Me Maybe - A Beginner's Guide to AI Function Calling
+# Call Me Maybe - AI Function Calling
 
 Welcome to **Call Me Maybe**!  If you are new to the world of Artificial Intelligence, you might have noticed that AIs are great at chatting, but sometimes struggle with following strict computer rules. 
 
